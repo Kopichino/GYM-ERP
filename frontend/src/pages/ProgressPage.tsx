@@ -2,13 +2,16 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { fetchExercises, fetchProgress } from "../api/workouts";
-import { Card, PageHeader, Select } from "../components/ui";
+import { Card, ErrorState, LoadingState, PageHeader, Select } from "../components/ui";
 
 export default function ProgressPage() {
-  const { data: exercises } = useQuery({ queryKey: ["exercises"], queryFn: fetchExercises });
+  const { data: exercises, isLoading: exercisesLoading, isError: exercisesError } = useQuery({
+    queryKey: ["exercises"],
+    queryFn: fetchExercises,
+  });
   const [exerciseId, setExerciseId] = useState<number | "">("");
 
-  const { data: progress } = useQuery({
+  const { data: progress, isLoading: progressLoading, isError: progressError } = useQuery({
     queryKey: ["progress", exerciseId],
     queryFn: () => fetchProgress(exerciseId as number),
     enabled: exerciseId !== "",
@@ -25,21 +28,31 @@ export default function ProgressPage() {
     <div>
       <PageHeader title="Progress Tracker" subtitle="See how your lifts trend over time." />
       <Card>
-        <Select
-          value={exerciseId}
-          onChange={(e) => setExerciseId(Number(e.target.value) || "")}
-          className="mb-6 max-w-xs"
-        >
-          <option value="">Select an exercise</option>
-          {exercises?.map((ex) => (
-            <option key={ex.id} value={ex.id}>
-              {ex.name}
-            </option>
-          ))}
-        </Select>
+        {exercisesLoading ? (
+          <LoadingState label="Loading exercises..." />
+        ) : exercisesError ? (
+          <ErrorState />
+        ) : (
+          <Select
+            value={exerciseId}
+            onChange={(e) => setExerciseId(Number(e.target.value) || "")}
+            className="mb-6 max-w-xs"
+          >
+            <option value="">Select an exercise</option>
+            {exercises?.map((ex) => (
+              <option key={ex.id} value={ex.id}>
+                {ex.name}
+              </option>
+            ))}
+          </Select>
+        )}
 
         {exerciseId === "" ? (
           <p className="text-sm text-[var(--color-text-muted)]">Pick an exercise to see its trend.</p>
+        ) : progressLoading ? (
+          <LoadingState label="Loading progress..." />
+        ) : progressError ? (
+          <ErrorState />
         ) : chartData.length === 0 ? (
           <p className="text-sm text-[var(--color-text-muted)]">No logged sets for this exercise yet.</p>
         ) : (

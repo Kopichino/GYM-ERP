@@ -1,11 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { createInstructor, deleteInstructor, fetchInstructors } from "../../api/instructors";
-import { Button, Card, Input, Textarea } from "../../components/ui";
+import { Button, Card, EmptyState, ErrorState, Input, LoadingState, Textarea } from "../../components/ui";
 
 export default function AdminInstructorsPage() {
   const queryClient = useQueryClient();
-  const { data: instructors } = useQuery({ queryKey: ["instructors"], queryFn: fetchInstructors });
+  const { data: instructors, isLoading, isError } = useQuery({
+    queryKey: ["instructors"],
+    queryFn: fetchInstructors,
+  });
   const [name, setName] = useState("");
   const [specialty, setSpecialty] = useState("");
   const [bio, setBio] = useState("");
@@ -63,16 +66,24 @@ export default function AdminInstructorsPage() {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
           Current instructors
         </h2>
-        <ul className="flex flex-col gap-2">
-          {instructors?.map((i) => (
-            <li key={i.id} className="flex items-center justify-between border-b border-[var(--color-border)] py-2">
-              <span className="text-sm text-[var(--color-text)]">{i.name}</span>
-              <Button variant="danger" onClick={() => remove.mutate(i.id)} className="px-2 py-1 text-xs">
-                Delete
-              </Button>
-            </li>
-          ))}
-        </ul>
+        {isLoading ? (
+          <LoadingState />
+        ) : isError ? (
+          <ErrorState />
+        ) : instructors?.length === 0 ? (
+          <EmptyState>No instructors yet.</EmptyState>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {instructors?.map((i) => (
+              <li key={i.id} className="flex items-center justify-between border-b border-[var(--color-border)] py-2">
+                <span className="text-sm text-[var(--color-text)]">{i.name}</span>
+                <Button variant="danger" onClick={() => remove.mutate(i.id)} className="px-2 py-1 text-xs">
+                  Delete
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
     </div>
   );

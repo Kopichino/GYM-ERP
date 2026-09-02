@@ -64,3 +64,35 @@ class CheckInOutViewSet(ReadOnlyModelViewSet):
         record.check_out_time = timezone.now()
         record.save(update_fields=["check_out_time"])
         return Response(self.get_serializer(record).data)
+
+    @action(detail=False, methods=["get"])
+    def calendar(self, request):
+        """All-time visit dates (deduped, local calendar day) plus streak
+        stats, for the consistency calendar. Deliberately unpaginated --
+        a heatmap/streak needs the full history, not just the latest page
+        of check-ins."""
+        check_in_times = CheckInOut.objects.filter(user=request.user).values_list(
+            "check_in_time", flat=True
+        )
+        dates = sorted({timezone.localtime(t).date() for t in check_in_times})
+
+        current_streak = 0
+        longest_streak = 0
+        if dates:
+            run = 1
+            longest_streak = 1
+            for previous_date, current_date in zip(dates, dates[1:]):
+                run = run + 1 if (current_date - previous_date).days == 1 else 1
+                longest_streak = max(longest_streak, run)
+
+            gap_from_today = (timezone.localtime().date() - dates[-1]).days
+            current_streak = run if gap_from_today <= 1 else 0
+
+        return Response(
+            {
+                "dates": [d.isoformat() for d in dates],
+                "total_visits": len(dates),
+                "current_streak": current_streak,
+                "longest_streak": longest_streak,
+            }
+        )

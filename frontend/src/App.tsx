@@ -4,7 +4,9 @@ import AppLayout from "./components/layout/AppLayout";
 import LoadingScreen from "./components/LoadingScreen";
 import { useAuthBootstrap } from "./hooks/useAuthBootstrap";
 import AnnouncementsPage from "./pages/AnnouncementsPage";
+import BillingPage from "./pages/BillingPage";
 import DashboardPage from "./pages/DashboardPage";
+import ExercisesPage from "./pages/ExercisesPage";
 import GalleryPage from "./pages/GalleryPage";
 import InstructorsPage from "./pages/InstructorsPage";
 import LandingPage from "./pages/LandingPage";
@@ -24,6 +26,8 @@ const AdminAnnouncementsPage = lazy(() => import("./pages/admin/AdminAnnouncemen
 const AdminInstructorsPage = lazy(() => import("./pages/admin/AdminInstructorsPage"));
 const AdminSchedulePage = lazy(() => import("./pages/admin/AdminSchedulePage"));
 const AdminGalleryPage = lazy(() => import("./pages/admin/AdminGalleryPage"));
+const AdminBillingPage = lazy(() => import("./pages/admin/AdminBillingPage"));
+const AdminPlansPage = lazy(() => import("./pages/admin/AdminPlansPage"));
 
 export default function App() {
   const { ready, slow } = useAuthBootstrap();
@@ -43,11 +47,13 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/workouts" element={<WorkoutsPage />} />
+          <Route path="/exercises" element={<ExercisesPage />} />
           <Route path="/progress" element={<ProgressPage />} />
           <Route path="/announcements" element={<AnnouncementsPage />} />
           <Route path="/instructors" element={<InstructorsPage />} />
           <Route path="/schedule" element={<SchedulePage />} />
           <Route path="/gallery" element={<GalleryPage />} />
+          <Route path="/billing" element={<BillingPage />} />
 
           <Route element={<AdminRoute />}>
             <Route path="/admin" element={<AdminLayout />}>
@@ -56,6 +62,8 @@ export default function App() {
               <Route path="instructors" element={<AdminInstructorsPage />} />
               <Route path="schedule" element={<AdminSchedulePage />} />
               <Route path="gallery" element={<AdminGalleryPage />} />
+              <Route path="billing" element={<AdminBillingPage />} />
+              <Route path="plans" element={<AdminPlansPage />} />
             </Route>
           </Route>
         </Route>

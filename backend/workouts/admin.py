@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Exercise, WorkoutLog, WorkoutSession
+from .models import Exercise, ExerciseVideo, WorkoutLog, WorkoutSession
 
 
 class WorkoutLogInline(admin.TabularInline):
@@ -8,10 +8,16 @@ class WorkoutLogInline(admin.TabularInline):
     extra = 1
 
 
+class ExerciseVideoInline(admin.TabularInline):
+    model = ExerciseVideo
+    extra = 1
+
+
 @admin.register(Exercise)
 class ExerciseAdmin(admin.ModelAdmin):
     list_display = ["name", "category", "muscle_group"]
     search_fields = ["name"]
+    inlines = [ExerciseVideoInline]
 
 
 @admin.register(WorkoutSession)

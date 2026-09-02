@@ -1,11 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { createAnnouncement, deleteAnnouncement, fetchAnnouncements } from "../../api/announcements";
-import { Button, Card, Input, Textarea } from "../../components/ui";
+import { Button, Card, EmptyState, ErrorState, Input, LoadingState, Textarea } from "../../components/ui";
 
 export default function AdminAnnouncementsPage() {
   const queryClient = useQueryClient();
-  const { data: announcements } = useQuery({ queryKey: ["announcements"], queryFn: fetchAnnouncements });
+  const { data: announcements, isLoading, isError } = useQuery({
+    queryKey: ["announcements"],
+    queryFn: fetchAnnouncements,
+  });
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [pinned, setPinned] = useState(false);
@@ -54,19 +57,27 @@ export default function AdminAnnouncementsPage() {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
           Existing announcements
         </h2>
-        <ul className="flex flex-col gap-2">
-          {announcements?.map((a) => (
-            <li key={a.id} className="flex items-center justify-between border-b border-[var(--color-border)] py-2">
-              <span className="text-sm text-[var(--color-text)]">
-                {a.pinned && <span className="mr-1 text-[var(--color-accent)]">*</span>}
-                {a.title}
-              </span>
-              <Button variant="danger" onClick={() => remove.mutate(a.id)} className="px-2 py-1 text-xs">
-                Delete
-              </Button>
-            </li>
-          ))}
-        </ul>
+        {isLoading ? (
+          <LoadingState />
+        ) : isError ? (
+          <ErrorState />
+        ) : announcements?.length === 0 ? (
+          <EmptyState>No announcements yet.</EmptyState>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {announcements?.map((a) => (
+              <li key={a.id} className="flex items-center justify-between border-b border-[var(--color-border)] py-2">
+                <span className="text-sm text-[var(--color-text)]">
+                  {a.pinned && <span className="mr-1 text-[var(--color-accent)]">*</span>}
+                  {a.title}
+                </span>
+                <Button variant="danger" onClick={() => remove.mutate(a.id)} className="px-2 py-1 text-xs">
+                  Delete
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
     </div>
   );

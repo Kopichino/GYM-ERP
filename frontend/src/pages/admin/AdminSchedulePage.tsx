@@ -2,11 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { fetchInstructors } from "../../api/instructors";
 import { createClassSession, deleteClassSession, fetchClassSessions } from "../../api/schedule";
-import { Button, Card, Input, Select } from "../../components/ui";
+import { Button, Card, EmptyState, ErrorState, Input, LoadingState, Select } from "../../components/ui";
 
 export default function AdminSchedulePage() {
   const queryClient = useQueryClient();
-  const { data: sessions } = useQuery({ queryKey: ["schedule"], queryFn: fetchClassSessions });
+  const { data: sessions, isLoading, isError } = useQuery({
+    queryKey: ["schedule"],
+    queryFn: fetchClassSessions,
+  });
   const { data: instructors } = useQuery({ queryKey: ["instructors"], queryFn: fetchInstructors });
 
   const [form, setForm] = useState({
@@ -107,18 +110,26 @@ export default function AdminSchedulePage() {
         <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
           Upcoming
         </h2>
-        <ul className="flex flex-col gap-2">
-          {sessions?.map((s) => (
-            <li key={s.id} className="flex items-center justify-between border-b border-[var(--color-border)] py-2">
-              <span className="text-sm text-[var(--color-text)]">
-                {s.title} - {s.date} {s.start_time.slice(0, 5)}
-              </span>
-              <Button variant="danger" onClick={() => remove.mutate(s.id)} className="px-2 py-1 text-xs">
-                Delete
-              </Button>
-            </li>
-          ))}
-        </ul>
+        {isLoading ? (
+          <LoadingState />
+        ) : isError ? (
+          <ErrorState />
+        ) : sessions?.length === 0 ? (
+          <EmptyState>Nothing scheduled yet.</EmptyState>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {sessions?.map((s) => (
+              <li key={s.id} className="flex items-center justify-between border-b border-[var(--color-border)] py-2">
+                <span className="text-sm text-[var(--color-text)]">
+                  {s.title} - {s.date} {s.start_time.slice(0, 5)}
+                </span>
+                <Button variant="danger" onClick={() => remove.mutate(s.id)} className="px-2 py-1 text-xs">
+                  Delete
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
       </Card>
     </div>
   );

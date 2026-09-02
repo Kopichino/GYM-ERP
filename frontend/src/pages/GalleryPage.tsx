@@ -1,11 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { useRef, useState } from "react";
 import { fetchGalleryPosts, uploadGalleryPost } from "../api/gallery";
-import { Button, Card, ErrorText, Input, PageHeader } from "../components/ui";
+import { Button, Card, EmptyState, ErrorState, ErrorText, Input, LoadingState, PageHeader } from "../components/ui";
+import { fadeUp, staggerContainer } from "../lib/motion";
 
 export default function GalleryPage() {
   const queryClient = useQueryClient();
-  const { data: posts } = useQuery({ queryKey: ["gallery"], queryFn: fetchGalleryPosts });
+  const { data: posts, isLoading, isError } = useQuery({ queryKey: ["gallery"], queryFn: fetchGalleryPosts });
   const fileRef = useRef<HTMLInputElement>(null);
   const [caption, setCaption] = useState("");
   const [error, setError] = useState("");
@@ -64,29 +66,43 @@ export default function GalleryPage() {
         </p>
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {posts?.map((post) => (
-          <Card key={post.id} className="overflow-hidden p-0">
-            <div className="relative aspect-square bg-[var(--color-surface-2)]">
-              {post.media_type === "video" ? (
-                <video src={post.media} controls className="h-full w-full object-cover" />
-              ) : (
-                <img src={post.media} alt={post.caption} className="h-full w-full object-cover" />
-              )}
-              {!post.approved && (
-                <span className="absolute right-2 top-2 rounded bg-black/70 px-2 py-1 text-xs text-[var(--color-accent-2)]">
-                  Pending review
-                </span>
-              )}
-            </div>
-            <div className="p-3">
-              <p className="text-sm text-[var(--color-text)]">{post.caption}</p>
-              <p className="text-xs text-[var(--color-text-muted)]">{post.uploader_name || "Gym"}</p>
-            </div>
-          </Card>
-        ))}
-        {posts?.length === 0 && <p className="text-sm text-[var(--color-text-muted)]">No posts yet -- be the first!</p>}
-      </div>
+      {isLoading ? (
+        <LoadingState />
+      ) : isError ? (
+        <ErrorState />
+      ) : posts?.length === 0 ? (
+        <EmptyState>No posts yet -- be the first!</EmptyState>
+      ) : (
+        <motion.div
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          initial="hidden"
+          animate="visible"
+          variants={staggerContainer()}
+        >
+          {posts?.map((post) => (
+            <motion.div key={post.id} variants={fadeUp}>
+              <Card className="overflow-hidden p-0">
+                <div className="relative aspect-square bg-[var(--color-surface-2)]">
+                  {post.media_type === "video" ? (
+                    <video src={post.media} controls className="h-full w-full object-cover" />
+                  ) : (
+                    <img src={post.media} alt={post.caption} className="h-full w-full object-cover" />
+                  )}
+                  {!post.approved && (
+                    <span className="absolute right-2 top-2 rounded bg-black/70 px-2 py-1 text-xs text-[var(--color-accent-2)]">
+                      Pending review
+                    </span>
+                  )}
+                </div>
+                <div className="p-3">
+                  <p className="text-sm text-[var(--color-text)]">{post.caption}</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">{post.uploader_name || "Gym"}</p>
+                </div>
+              </Card>
+            </motion.div>
+          ))}
+        </motion.div>
+      )}
     </div>
   );
 }

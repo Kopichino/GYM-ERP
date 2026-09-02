@@ -1,12 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { addLog, createSession, fetchExercises, fetchSessions } from "../api/workouts";
-import { Button, Card, PageHeader, Select } from "../components/ui";
+import { Button, Card, ErrorState, LoadingState, PageHeader, Select } from "../components/ui";
+import VideoStrip from "../components/VideoStrip";
 
 export default function WorkoutsPage() {
   const queryClient = useQueryClient();
   const { data: exercises } = useQuery({ queryKey: ["exercises"], queryFn: fetchExercises });
-  const { data: sessions } = useQuery({ queryKey: ["sessions"], queryFn: fetchSessions });
+  const { data: sessions, isLoading: sessionsLoading, isError: sessionsError } = useQuery({
+    queryKey: ["sessions"],
+    queryFn: fetchSessions,
+  });
 
   const [activeSessionId, setActiveSessionId] = useState<number | null>(null);
   const [exerciseId, setExerciseId] = useState<number | "">("");
@@ -22,6 +26,7 @@ export default function WorkoutsPage() {
     },
   });
 
+  const selectedExercise = exercises?.find((ex) => ex.id === exerciseId);
   const activeSession = sessions?.find((s) => s.id === activeSessionId) ?? sessions?.[0];
   const nextSetNumber = (activeSession?.logs.filter((l) => l.exercise === exerciseId).length ?? 0) + 1;
 
@@ -44,7 +49,15 @@ export default function WorkoutsPage() {
     <div>
       <PageHeader title="Workout Logger" subtitle="Track your sets, reps, and weight for each session." />
 
-      {!activeSession ? (
+      {sessionsLoading ? (
+        <Card>
+          <LoadingState label="Loading your sessions..." />
+        </Card>
+      ) : sessionsError ? (
+        <Card>
+          <ErrorState />
+        </Card>
+      ) : !activeSession ? (
         <Card>
           <p className="mb-4 text-sm text-[var(--color-text-muted)]">
             Start today's session to begin logging sets.
@@ -68,6 +81,14 @@ export default function WorkoutsPage() {
                   </option>
                 ))}
               </Select>
+              {selectedExercise && (
+                <div>
+                  <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                    Form tutorials
+                  </p>
+                  <VideoStrip videos={selectedExercise.videos} />
+                </div>
+              )}
               <div className="flex gap-3">
                 <label className="flex-1 text-xs text-[var(--color-text-muted)]">
                   Reps

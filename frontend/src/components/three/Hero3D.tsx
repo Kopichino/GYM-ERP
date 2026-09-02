@@ -1,3 +1,4 @@
+import type { MotionValue } from "framer-motion";
 import { lazy, Suspense, useEffect, useState } from "react";
 
 const HeroScene = lazy(() => import("./HeroScene"));
@@ -17,7 +18,7 @@ function StaticFallback() {
   );
 }
 
-export default function Hero3D() {
+export default function Hero3D({ scrollProgress }: { scrollProgress: MotionValue<number> }) {
   const [canRender3D, setCanRender3D] = useState(false);
 
   useEffect(() => {
@@ -28,7 +29,7 @@ export default function Hero3D() {
 
   return (
     <Suspense fallback={<StaticFallback />}>
-      <HeroScene />
+      <HeroScene scrollProgress={scrollProgress} />
     </Suspense>
   );
 }

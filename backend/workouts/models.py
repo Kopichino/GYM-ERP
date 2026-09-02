@@ -10,12 +10,33 @@ class Exercise(models.Model):
     name = models.CharField(max_length=100, unique=True)
     category = models.CharField(max_length=50, blank=True)
     muscle_group = models.CharField(max_length=50, blank=True)
+    region = models.CharField(
+        max_length=60,
+        blank=True,
+        help_text="Sub-muscle group within muscle_group, e.g. 'Upper Chest'.",
+    )
 
     class Meta:
         ordering = ["name"]
 
     def __str__(self):
         return self.name
+
+
+class ExerciseVideo(models.Model):
+    """Admin-curated tutorial links (YouTube Shorts, etc.) shown under an
+    exercise so members can check their form without leaving the app."""
+
+    exercise = models.ForeignKey(Exercise, on_delete=models.CASCADE, related_name="videos")
+    title = models.CharField(max_length=150, blank=True)
+    url = models.URLField()
+    order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return self.title or self.url
 
 
 class WorkoutSession(models.Model):

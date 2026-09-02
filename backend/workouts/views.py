@@ -13,11 +13,13 @@ from .serializers import ExerciseSerializer, WorkoutLogSerializer, WorkoutSessio
 
 class ExerciseViewSet(ModelViewSet):
     """Admin-managed catalog; members have read-only access to pick from
-    when logging a workout."""
+    when logging a workout. Unpaginated -- the workout logger dropdown and
+    the muscle-group library both need the full catalog, not one page of it."""
 
     queryset = Exercise.objects.all()
     serializer_class = ExerciseSerializer
     permission_classes = [IsAdminOrReadOnly]
+    pagination_class = None
 
 
 class WorkoutSessionViewSet(ModelViewSet):

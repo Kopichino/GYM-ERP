@@ -1,12 +1,20 @@
 from rest_framework import serializers
 
-from .models import Exercise, WorkoutLog, WorkoutSession
+from .models import Exercise, ExerciseVideo, WorkoutLog, WorkoutSession
+
+
+class ExerciseVideoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ExerciseVideo
+        fields = ["id", "title", "url", "order"]
 
 
 class ExerciseSerializer(serializers.ModelSerializer):
+    videos = ExerciseVideoSerializer(many=True, read_only=True)
+
     class Meta:
         model = Exercise
-        fields = ["id", "name", "category", "muscle_group"]
+        fields = ["id", "name", "category", "muscle_group", "region", "videos"]
 
 
 class WorkoutLogSerializer(serializers.ModelSerializer):

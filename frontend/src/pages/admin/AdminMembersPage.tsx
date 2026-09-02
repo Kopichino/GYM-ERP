@@ -1,9 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { downloadMembersExcel, fetchMembers } from "../../api/admin";
-import { Button, Card } from "../../components/ui";
+import {
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+  tableCellClass,
+  tableHeadCellClass,
+  tableHeadRowClass,
+  tableRowClass,
+} from "../../components/ui";
+import { fadeUp, staggerContainer } from "../../lib/motion";
 
 export default function AdminMembersPage() {
-  const { data: members, isLoading } = useQuery({ queryKey: ["admin", "members"], queryFn: fetchMembers });
+  const { data: members, isLoading, isError } = useQuery({ queryKey: ["admin", "members"], queryFn: fetchMembers });
 
   return (
     <Card>
@@ -13,36 +25,42 @@ export default function AdminMembersPage() {
         </h2>
         <Button onClick={() => downloadMembersExcel()}>Download as Excel</Button>
       </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead className="text-[var(--color-text-muted)]">
-            <tr className="border-b border-[var(--color-border)]">
-              <th className="py-2 pr-4">Username</th>
-              <th className="py-2 pr-4">Email</th>
-              <th className="py-2 pr-4">Phone</th>
-              <th className="py-2 pr-4">Status</th>
-              <th className="py-2 pr-4">Joined</th>
-              <th className="py-2 pr-4">Last check-in</th>
-            </tr>
-          </thead>
-          <tbody>
-            {members?.map((m) => (
-              <tr key={m.id} className="border-b border-[var(--color-border)] text-[var(--color-text)] last:border-none">
-                <td className="py-2 pr-4">{m.username}</td>
-                <td className="py-2 pr-4">{m.email}</td>
-                <td className="py-2 pr-4">{m.phone || "-"}</td>
-                <td className="py-2 pr-4 capitalize">{m.membership_status || "-"}</td>
-                <td className="py-2 pr-4">{m.join_date}</td>
-                <td className="py-2 pr-4">
-                  {m.last_check_in ? new Date(m.last_check_in).toLocaleString() : "Never"}
-                </td>
+      {isLoading ? (
+        <LoadingState />
+      ) : isError ? (
+        <ErrorState />
+      ) : members?.length === 0 ? (
+        <EmptyState>No members yet.</EmptyState>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="text-[var(--color-text-muted)]">
+              <tr className={tableHeadRowClass}>
+                <th className={tableHeadCellClass}>Username</th>
+                <th className={tableHeadCellClass}>Email</th>
+                <th className={tableHeadCellClass}>Phone</th>
+                <th className={tableHeadCellClass}>Status</th>
+                <th className={tableHeadCellClass}>Joined</th>
+                <th className={tableHeadCellClass}>Last check-in</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-        {isLoading && <p className="py-4 text-sm text-[var(--color-text-muted)]">Loading...</p>}
-        {members?.length === 0 && <p className="py-4 text-sm text-[var(--color-text-muted)]">No members yet.</p>}
-      </div>
+            </thead>
+            <motion.tbody initial="hidden" animate="visible" variants={staggerContainer(0.03)}>
+              {members?.map((m) => (
+                <motion.tr key={m.id} variants={fadeUp} className={tableRowClass}>
+                  <td className={tableCellClass}>{m.username}</td>
+                  <td className={tableCellClass}>{m.email}</td>
+                  <td className={tableCellClass}>{m.phone || "-"}</td>
+                  <td className={`${tableCellClass} capitalize`}>{m.membership_status || "-"}</td>
+                  <td className={tableCellClass}>{m.join_date}</td>
+                  <td className={tableCellClass}>
+                    {m.last_check_in ? new Date(m.last_check_in).toLocaleString() : "Never"}
+                  </td>
+                </motion.tr>
+              ))}
+            </motion.tbody>
+          </table>
+        </div>
+      )}
     </Card>
   );
 }

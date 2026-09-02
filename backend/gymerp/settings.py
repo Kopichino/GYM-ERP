@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "instructors",
     "schedule_app",
     "gallery",
+    "billing",
 ]
 
 MIDDLEWARE = [

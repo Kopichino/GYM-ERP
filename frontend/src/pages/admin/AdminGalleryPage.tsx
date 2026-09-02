@@ -1,10 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { approveGalleryPost, deleteGalleryPost, fetchGalleryPosts } from "../../api/gallery";
-import { Button, Card } from "../../components/ui";
+import { Button, Card, ErrorState, LoadingState } from "../../components/ui";
 
 export default function AdminGalleryPage() {
   const queryClient = useQueryClient();
-  const { data: posts } = useQuery({ queryKey: ["gallery"], queryFn: fetchGalleryPosts });
+  const { data: posts, isLoading, isError } = useQuery({ queryKey: ["gallery"], queryFn: fetchGalleryPosts });
 
   const approve = useMutation({
     mutationFn: (id: number) => approveGalleryPost(id),
@@ -17,6 +17,21 @@ export default function AdminGalleryPage() {
 
   const pending = posts?.filter((p) => !p.approved) ?? [];
   const approved = posts?.filter((p) => p.approved) ?? [];
+
+  if (isLoading) {
+    return (
+      <Card>
+        <LoadingState />
+      </Card>
+    );
+  }
+  if (isError) {
+    return (
+      <Card>
+        <ErrorState />
+      </Card>
+    );
+  }
 
   return (
     <div>

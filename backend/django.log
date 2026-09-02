@@ -447,3 +447,9 @@ Bad Request: /api/auth/signup/
 [22/Aug/2026 22:09:46] "GET /api/workouts/sessions/ HTTP/1.1" 200 52
 [22/Aug/2026 22:09:48] "POST /api/workouts/sessions/ HTTP/1.1" 201 58
 [22/Aug/2026 22:09:48] "GET /api/workouts/sessions/ HTTP/1.1" 200 110
+Unauthorized: /api/auth/refresh/
+Unauthorized: /api/auth/refresh/
+[23/Aug/2026 00:23:18] "POST /api/auth/refresh/ HTTP/1.1" 401 37
+[23/Aug/2026 00:23:18] "POST /api/auth/refresh/ HTTP/1.1" 401 37
+Unauthorized: /api/auth/refresh/
+[23/Aug/2026 00:23:18] "POST /api/auth/refresh/ HTTP/1.1" 401 37

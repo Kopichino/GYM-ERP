@@ -26,3 +26,15 @@ export async function checkOut() {
   const res = await api.post<CheckInOut>("/attendance/check_out/");
   return res.data;
 }
+
+export interface CalendarData {
+  dates: string[];
+  total_visits: number;
+  current_streak: number;
+  longest_streak: number;
+}
+
+export async function fetchCalendar() {
+  const res = await api.get<CalendarData>("/attendance/calendar/");
+  return res.data;
+}

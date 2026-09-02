@@ -15,6 +15,7 @@ urlpatterns = [
     path("api/instructors/", include("instructors.urls")),
     path("api/schedule/", include("schedule_app.urls")),
     path("api/gallery/", include("gallery.urls")),
+    path("api/billing/", include("billing.urls")),
 ]
 
 if settings.DEBUG:

@@ -1,10 +1,19 @@
 import { api } from "../lib/api";
 
+export interface ExerciseVideo {
+  id: number;
+  title: string;
+  url: string;
+  order: number;
+}
+
 export interface Exercise {
   id: number;
   name: string;
   category: string;
   muscle_group: string;
+  region: string;
+  videos: ExerciseVideo[];
 }
 
 export interface WorkoutLog {
