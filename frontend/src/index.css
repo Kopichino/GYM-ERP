@@ -1,0 +1,212 @@
+@import "tailwindcss";
+
+/*
+ * Dark is the default and the design's home key -- the gym floor look the whole
+ * app was drawn for. Light is a genuine second palette rather than an inverted
+ * copy: the same tokens, re-chosen so contrast holds on a pale ground.
+ *
+ * These live in `@theme` so Tailwind generates utilities from them, and because
+ * Tailwind emits them as custom properties on `:root`, redefining them under a
+ * selector below is enough to repaint the entire app. Nothing that reads a
+ * token needs to know a theme exists.
+ */
+@theme {
+  --color-bg: #0a0a0f;
+  --color-surface: #14141c;
+  --color-surface-2: #1c1c28;
+  --color-border: #2a2a38;
+  --color-accent: var(--brand-accent, #ff3d5a);
+  --color-accent-2: var(--brand-accent-2, #ffb020);
+  --color-text: #f4f4f8;
+  --color-text-muted: #9494a8;
+  --font-display: "Bebas Neue", "Inter", system-ui, sans-serif;
+
+  /*
+   * The four meanings, as tokens rather than constants in a TS file.
+   *
+   * They have to move with the theme: #22c55e on near-black is comfortable and
+   * on white is about 2.2:1, which fails any contrast bar for the small text
+   * these are mostly used on. The light values below are darker siblings of
+   * the same hue, so a status keeps its meaning while staying legible.
+   */
+  --status-positive: #22c55e;
+  --status-caution: #ffb020;
+  --status-negative: #ff3d5a;
+  --status-neutral: #4f8dfd;
+
+  /*
+   * A surface that has to read as *raised* off a card rather than merely
+   * different from it. `--color-surface-2` sits about eight points a channel
+   * above the card, which measures as applied and looks like nothing changed;
+   * this is a real step.
+   */
+  --color-raised: #2a3040;
+  --color-raised-hover: #39415a;
+
+  /*
+   * Text on an accent-coloured fill.
+   *
+   * Not a constant: the dark theme's accent is bright enough to want near-black
+   * on it, and the light theme's is dark enough to want white. Hardcoding
+   * either produces an unreadable button in the other theme.
+   */
+  --color-on-accent: #0b0b10;
+
+  /* Hairlines and dot grids. White at 2-5% on near-black is texture; the
+     same white on white is nothing at all, so this flips with the theme. */
+  --texture: rgba(255, 255, 255, 0.05);
+  --texture-faint: rgba(255, 255, 255, 0.02);
+
+  /* Deliberately not a token: the scrim behind a modal is dark in both
+     themes, because its job is to push the page back, not to match it. */
+}
+
+/*
+ * The dark values again, this time under a selector rather than only in
+ * `@theme`.
+ *
+ * `@theme` puts them on `:root`, which makes them the document default but not
+ * something a subtree can ask for. Restating them here means any element can
+ * carry `data-theme="dark"` and get the dark palette for its descendants --
+ * custom properties inherit, so the nearest declaration wins for that subtree
+ * regardless of what <html> says. The login and signup screens use this.
+ */
+[data-theme="dark"] {
+  --color-bg: #0a0a0f;
+  --color-surface: #14141c;
+  --color-surface-2: #1c1c28;
+  --color-border: #2a2a38;
+  --color-text: #f4f4f8;
+  --color-text-muted: #9494a8;
+
+  --color-accent: var(--brand-accent, #ff3d5a);
+  --color-accent-2: var(--brand-accent-2, #ffb020);
+
+  --status-positive: #22c55e;
+  --status-caution: #ffb020;
+  --status-negative: #ff3d5a;
+  --status-neutral: #4f8dfd;
+
+  --color-raised: #2a3040;
+  --color-raised-hover: #39415a;
+  --color-on-accent: #0b0b10;
+
+  --texture: rgba(255, 255, 255, 0.05);
+  --texture-faint: rgba(255, 255, 255, 0.02);
+}
+
+/*
+ * `data-theme` on <html>, written by the store before first paint.
+ *
+ * An explicit attribute rather than only `prefers-color-scheme`, because a
+ * choice has to beat the system setting -- someone on a dark laptop who picks
+ * light means it. `:root:not([data-theme="dark"])` lets the system preference
+ * apply when no choice has been made, without overriding one that has.
+ */
+:root[data-theme="light"] {
+  --color-bg: #f4f4f8;
+  --color-surface: #ffffff;
+  --color-surface-2: #eeeef4;
+  --color-border: #dcdce6;
+  --color-text: #14141c;
+  --color-text-muted: #5c5c70;
+
+  /* The brand red at full brightness is ~3:1 on white -- fine for a 3px rail,
+     not for the text and small buttons it also drives. */
+  --color-accent: var(--brand-accent, #e11d48);
+  --color-accent-2: var(--brand-accent-2, #b45309);
+
+  --status-positive: #15803d;
+  --status-caution: #b45309;
+  --status-negative: #dc2626;
+  --status-neutral: #2563eb;
+
+  /* Raised means *lighter* than the card here, not darker -- a grey block on
+     white reads as disabled rather than as a control. */
+  --color-raised: #e4e4ee;
+  --color-raised-hover: #d6d6e4;
+
+  --color-on-accent: #ffffff;
+
+  /* Much lower, because dark on white is far more visible than the
+     reverse at the same opacity. */
+  --texture: rgba(20, 20, 28, 0.045);
+  --texture-faint: rgba(20, 20, 28, 0.02);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* Scrollable areas that shouldn't advertise it -- the dropdown panel and the
+   tab strip. The content still scrolls; only the bar is hidden. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  background-image:
+    radial-gradient(ellipse 60% 40% at 15% 0%, rgba(255, 61, 90, 0.08), transparent 60%),
+    radial-gradient(ellipse 50% 35% at 100% 20%, rgba(255, 176, 32, 0.06), transparent 60%),
+    repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.015) 0px,
+      rgba(255, 255, 255, 0.015) 2px,
+      transparent 2px,
+      transparent 14px
+    );
+  background-attachment: fixed;
+}
+
+/*
+ * The same wash, re-mixed for a pale ground.
+ *
+ * The dark version leans on white hairlines and glow, which on white read as
+ * smudges rather than atmosphere. The tints stay -- they are what stops the
+ * light theme looking like a blank document -- but the hairline flips to a
+ * dark one at a much lower opacity.
+ */
+:root[data-theme="light"] body {
+  background-image:
+    radial-gradient(ellipse 60% 40% at 15% 0%, rgba(225, 29, 72, 0.05), transparent 60%),
+    radial-gradient(ellipse 50% 35% at 100% 20%, rgba(180, 83, 9, 0.04), transparent 60%),
+    repeating-linear-gradient(
+      135deg,
+      rgba(20, 20, 28, 0.012) 0px,
+      rgba(20, 20, 28, 0.012) 2px,
+      transparent 2px,
+      transparent 14px
+    );
+}
+
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+::selection {
+  background: var(--color-accent);
+  color: white;
+}
+
+/* thin, gym-dark scrollbars for horizontal video/day strips */
+.scroll-thin::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+.scroll-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 999px;
+}

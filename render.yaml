@@ -1,0 +1,104 @@
+services:
+  - type: web
+    name: gymerp-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: bash build.sh
+    startCommand: gunicorn gymerp.wsgi:application
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: gymerp-backend.onrender.com
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: CSRF_TRUSTED_ORIGINS
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: SENTRY_DSN
+        sync: false
+      # GST invoicing. Leave GYM_GSTIN blank and no tax is shown on invoices.
+      - key: GYM_NAME
+        sync: false
+      - key: GYM_GSTIN
+        sync: false
+      - key: GYM_STATE
+        sync: false
+      - key: GST_RATE
+        sync: false
+      # Outgoing member email. Without EMAIL_HOST the reminder sweep prints to
+      # the log instead of sending, so it is safe to deploy unconfigured.
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        sync: false
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+      # Online payments. Leave RAZORPAY_KEY_ID blank and the member portal
+      # simply doesn't offer the button.
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      # Issued per webhook endpoint in the Razorpay dashboard, not the API key.
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      # WhatsApp Business. Blank credentials mean the tab is hidden and no
+      # message is sent -- email reminders carry on as the fallback.
+      - key: WHATSAPP_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: WHATSAPP_VERIFY_TOKEN
+        sync: false
+      - key: WHATSAPP_APP_SECRET
+        sync: false
+      # Optional: lets the assistant answer questions its own matcher doesn't
+      # recognise, using facts already read from the database.
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+  # Daily housekeeping. Both commands are idempotent, so a retried run is
+  # harmless: the sweep re-derives status from the ledger, and a reminder is
+  # keyed on what it is about rather than when it ran.
+  - type: cron
+    name: gymerp-nightly
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: bash build.sh
+    schedule: "30 1 * * *"
+    startCommand: python manage.py expire_subscriptions && python manage.py send_reminders
+    envVars:
+      - key: SECRET_KEY
+        sync: false
+      - key: DEBUG
+        value: "False"
+      - key: DATABASE_URL
+        sync: false
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        sync: false
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+      - key: GYM_NAME
+        sync: false

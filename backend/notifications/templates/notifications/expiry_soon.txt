@@ -1,0 +1,8 @@
+Hi {{ user.first_name|default:user.username }},
+
+Your {{ plan.name }} membership at {{ gym_name }} ends on {{ payment.period_end }}{% if days_left == 1 %} -- that's tomorrow{% else %}, {{ days_left }} days from now{% endif %}.
+
+Renew at the front desk and your new period starts the day this one ends, so you won't lose any of the days you've already paid for.
+
+See you at the gym,
+{{ gym_name }}

@@ -1,0 +1,7 @@
+Hi {{ user.first_name|default:user.username }},
+
+This is a reminder about the {{ amount }} still outstanding on your {{ plan.name }} membership at {{ gym_name }}.
+
+You can settle it at the front desk any time.
+
+{{ gym_name }}

@@ -1,0 +1,62 @@
+from django.db.models import Sum
+from rest_framework.decorators import action
+from rest_framework.response import Response
+from rest_framework.viewsets import ModelViewSet
+
+from core.permissions import IsAdmin
+
+from .models import Expense, ExpenseCategory
+from .serializers import ExpenseCategorySerializer, ExpenseSerializer
+
+
+class ExpenseCategoryViewSet(ModelViewSet):
+
+    def get_queryset(self):
+        # Built per request, not at import: the scoped manager needs a
+        # tenant in scope and a class attribute is evaluated on load.
+        return ExpenseCategory.objects.prefetch_related("expenses")
+    serializer_class = ExpenseCategorySerializer
+    permission_classes = [IsAdmin]
+
+
+class ExpenseViewSet(ModelViewSet):
+    """Spending is admin-only -- nothing about the gym's costs belongs in a
+    member or trainer view."""
+
+    serializer_class = ExpenseSerializer
+    permission_classes = [IsAdmin]
+
+    def get_queryset(self):
+        queryset = Expense.objects.select_related("category", "recorded_by")
+        params = self.request.query_params
+        if params.get("category"):
+            queryset = queryset.filter(category_id=params["category"])
+        if params.get("from"):
+            queryset = queryset.filter(spent_on__gte=params["from"])
+        if params.get("to"):
+            queryset = queryset.filter(spent_on__lte=params["to"])
+        return queryset
+
+    def perform_create(self, serializer):
+        serializer.save(recorded_by=self.request.user)
+
+    @action(detail=False, methods=["get"])
+    def summary(self, request):
+        """Totals by category for the period, for the expenses panel and the
+        P&L in reports."""
+        queryset = self.get_queryset()
+        by_category = (
+            queryset.values("category__name")
+            .annotate(total=Sum("amount"))
+            .order_by("-total")
+        )
+        return Response(
+            {
+                "total": queryset.aggregate(total=Sum("amount"))["total"] or 0,
+                "count": queryset.count(),
+                "by_category": [
+                    {"category": row["category__name"], "total": row["total"]}
+                    for row in by_category
+                ],
+            }
+        )

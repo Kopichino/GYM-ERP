@@ -1,0 +1,193 @@
+# Continuous integration for IRONCORE.
+#
+# The point of this file is the Postgres job. Production runs on Postgres
+# (Neon), and several of this project's invariants behave differently there:
+#
+#   * the tests_concurrency.py modules skip themselves entirely on SQLite,
+#     because select_for_update() is a no-op on it -- so the one-open-check-in,
+#     one-live-PT-booking, one-feedback-response and gapless-invoice-numbering
+#     races have never actually been exercised by a SQLite run;
+#   * tenancy isolation and the per-organisation uniqueness constraints have
+#     already been observed passing on SQLite while failing on Postgres.
+#
+# A green SQLite run is therefore not evidence the build is good. The SQLite
+# job is kept only because it is fast and catches breakage for developers
+# working locally on the default settings; Postgres is the one that gates.
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  # So a dependency CVE published after a quiet week is still noticed.
+  schedule:
+    - cron: "0 3 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  tests-postgres:
+    name: Tests (Postgres — gating)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: gymerp_test
+        ports:
+          - 5432:5432
+        # Without this the suite can start before the server accepts
+        # connections and fail on something unrelated to the code.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://postgres:test@localhost:5432/gymerp_test
+      SECRET_KEY: ci-only-key-not-a-real-secret-at-least-fifty-characters-long-xyz
+      DEBUG: "False"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check for missing migrations
+        # A model edited without makemigrations deploys fine and then fails at
+        # runtime on a column that isn't there. Cheaper to catch here.
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Run the suite
+        run: python manage.py test --verbosity 2
+
+      - name: Confirm the concurrency tests actually ran
+        # They skip silently on a backend without row locks. If this job ever
+        # falls back to SQLite the suite would still be green while proving
+        # nothing, so fail loudly instead.
+        run: |
+          python - <<'PY'
+          import os, django
+          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "gymerp.settings")
+          django.setup()
+          from django.db import connection
+          assert connection.vendor == "postgresql", f"expected postgres, got {connection.vendor}"
+          assert connection.features.has_select_for_update, "row locking unavailable — concurrency tests would skip"
+          print("row locking available; concurrency tests ran for real")
+          PY
+
+  tests-sqlite:
+    name: Tests (SQLite — advisory)
+    runs-on: ubuntu-latest
+    env:
+      SECRET_KEY: ci-only-key-not-a-real-secret-at-least-fifty-characters-long-xyz
+      DEBUG: "False"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run the suite
+        # Concurrency and some constraint tests skip here by design.
+        run: python manage.py test
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Audit Python dependencies
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt --desc
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Audit Node dependencies
+        working-directory: frontend
+        # Production dependencies only: a dev-only advisory should not block a
+        # deploy, and npm audit is noisy about the build toolchain.
+        run: npm audit --omit=dev --audit-level=high
+
+  checks:
+    name: Django deployment checks
+    runs-on: ubuntu-latest
+
+    services:
+      # A real Redis, so the shared-cache path is exercised rather than the
+      # check for its absence being silenced. security.W901 fires when throttle
+      # state is per-process memory; satisfying it here means CI proves the
+      # Redis configuration actually constructs, and the warning still fires
+      # loudly on any deploy that has not set REDIS_URL.
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      SECRET_KEY: ci-only-key-not-a-real-secret-at-least-fifty-characters-long-xyz
+      DEBUG: "False"
+      DATABASE_URL: sqlite:///ci.sqlite3
+      REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: manage.py check --deploy
+        # Surfaces missing HSTS, insecure cookie flags, a weak SECRET_KEY and
+        # DEBUG left on -- the Category 4 items that are settings, not process.
+        run: python manage.py check --deploy --fail-level WARNING
+
+      - name: Confirm the cache is actually shared
+        # The check above passes if REDIS_URL merely parses. This proves the
+        # backend connects, because throttling that silently falls back to
+        # per-process memory is the failure this whole job exists to catch.
+        run: |
+          python - <<'PY'
+          import os, django
+          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "gymerp.settings")
+          django.setup()
+          from django.core.cache import caches
+          cache = caches["default"]
+          assert "redis" in type(cache).__module__, f"expected Redis, got {type(cache)}"
+          cache.set("ci-probe", "ok", 30)
+          assert cache.get("ci-probe") == "ok", "Redis cache did not round-trip"
+          print("shared cache reachable; throttle state will survive a restart")
+          PY

@@ -1,0 +1,5 @@
+member_firstname,member_surname,email,mobile,dob,joindate,status
+Karthik,Menon,karthik.menon@example.com,9876500101,14/03/1992,01/02/2025,Active
+Divya,Pillai,divya.pillai@example.com,9876500102,1994-07-22,15/03/2025,Active
+Imran,Sheikh,imran.sheikh@example.com,9876500103,03.11.1988,20/04/2025,Frozen
+Ananya,Ghosh,ananya.ghosh@example.com,9876500104,29/09/1996,05/05/2025,Cancelled

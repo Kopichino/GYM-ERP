@@ -1,0 +1,7 @@
+Hi {{ user.first_name|default:user.username }},
+
+Your {{ plan.name }} membership at {{ gym_name }} ran out on {{ payment.period_end }}.
+
+Nothing is lost -- your workout history, your split and your progress are all still there. Renew whenever you're ready and pick up where you left off.
+
+{{ gym_name }}

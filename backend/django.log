@@ -1,0 +1,455 @@
+Watching for file changes with StatReloader
+[22/Aug/2026 21:58:41] "GET /api/health/ HTTP/1.1" 200 15
+[22/Aug/2026 21:58:41,539] - Broken pipe from ('127.0.0.1', 63939)
+[22/Aug/2026 21:59:59] "POST /api/auth/login/ HTTP/1.1" 200 244
+[22/Aug/2026 21:59:59] "POST /api/auth/signup/ HTTP/1.1" 201 103
+[22/Aug/2026 22:00:00] "POST /api/auth/login/ HTTP/1.1" 200 244
+[22/Aug/2026 22:00:00] "GET /api/auth/me/ HTTP/1.1" 200 295
+[22/Aug/2026 22:00:00] "POST /api/attendance/check_in/ HTTP/1.1" 201 85
+Bad Request: /api/attendance/check_in/
+[22/Aug/2026 22:00:00] "POST /api/attendance/check_in/ HTTP/1.1" 400 32
+[22/Aug/2026 22:00:00] "GET /api/attendance/current/ HTTP/1.1" 200 85
+[22/Aug/2026 22:00:00] "POST /api/attendance/check_out/ HTTP/1.1" 200 110
+[22/Aug/2026 22:00:00] "GET /api/attendance/current/ HTTP/1.1" 200 0
+D:\Startup Idea\GYM ERP\backend\attendance\views.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+August 22, 2026 - 21:58:37
+Django version 6.1, using settings 'gymerp.settings'
+Starting WSGI development server at http://127.0.0.1:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.1/howto/deployment/
+Watching for file changes with StatReloader
+[22/Aug/2026 22:01:01] "POST /api/auth/login/ HTTP/1.1" 200 244
+[22/Aug/2026 22:01:02] "POST /api/auth/signup/ HTTP/1.1" 201 103
+[22/Aug/2026 22:01:02] "POST /api/auth/login/ HTTP/1.1" 200 244
+[22/Aug/2026 22:01:02] "GET /api/auth/me/ HTTP/1.1" 200 295
+[22/Aug/2026 22:01:02] "POST /api/attendance/check_in/ HTTP/1.1" 201 85
+Bad Request: /api/attendance/check_in/
+[22/Aug/2026 22:01:02] "POST /api/attendance/check_in/ HTTP/1.1" 400 32
+[22/Aug/2026 22:01:02] "GET /api/attendance/current/ HTTP/1.1" 200 85
+[22/Aug/2026 22:01:02] "POST /api/attendance/check_out/ HTTP/1.1" 200 110
+[22/Aug/2026 22:01:02] "GET /api/attendance/current/ HTTP/1.1" 204 0
+[22/Aug/2026 22:01:02] "POST /api/workouts/exercises/ HTTP/1.1" 201 88
+Forbidden: /api/workouts/exercises/
+[22/Aug/2026 22:01:02] "POST /api/workouts/exercises/ HTTP/1.1" 403 63
+[22/Aug/2026 22:01:02] "POST /api/workouts/sessions/ HTTP/1.1" 201 65
+[22/Aug/2026 22:01:02] "POST /api/workouts/logs/ HTTP/1.1" 201 142
+[22/Aug/2026 22:01:02] "GET /api/workouts/sessions/progress/?exercise=1 HTTP/1.1" 200 66
+[22/Aug/2026 22:01:02] "POST /api/announcements/ HTTP/1.1" 201 196
+[22/Aug/2026 22:01:02] "GET /api/announcements/ HTTP/1.1" 200 248
+Forbidden: /api/announcements/1/
+[22/Aug/2026 22:01:02] "DELETE /api/announcements/1/ HTTP/1.1" 403 63
+[22/Aug/2026 22:01:02] "POST /api/instructors/ HTTP/1.1" 201 98
+[22/Aug/2026 22:01:02] "GET /api/instructors/ HTTP/1.1" 200 150
+[22/Aug/2026 22:01:02] "POST /api/schedule/ HTTP/1.1" 201 176
+[22/Aug/2026 22:01:02] "GET /api/schedule/ HTTP/1.1" 200 228
+Internal Server Error: /api/gallery/
+Traceback (most recent call last):
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\core\files\storage\handler.py", line 26, in __getitem__
+    return self._storages[alias]
+           ~~~~~~~~~~~~~~^^^^^^^
+KeyError: 'default'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\core\files\storage\handler.py", line 29, in __getitem__
+    params = self.backends[alias]
+             ~~~~~~~~~~~~~^^^^^^^
+KeyError: 'default'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\core\handlers\exception.py", line 56, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\core\handlers\base.py", line 199, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\views\decorators\csrf.py", line 64, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\views.py", line 526, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\views.py", line 474, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\views.py", line 485, in raise_uncaught_exception
+    raise exc
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\views.py", line 523, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\mixins.py", line 19, in create
+    self.perform_create(serializer)
+  File "D:\Startup Idea\GYM ERP\backend\gallery\views.py", line 33, in perform_create
+    serializer.save(uploader=self.request.user)
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\serializers.py", line 208, in save
+    self.instance = self.create(validated_data)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\serializers.py", line 1008, in create
+    instance = ModelClass._default_manager.create(**validated_data)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\query.py", line 713, in create
+    obj.save(force_insert=True, using=self.db)
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\base.py", line 904, in save
+    self.save_base(
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\base.py", line 996, in save_base
+    updated = self._save_table(
+              ^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\base.py", line 1190, in _save_table
+    else field.pre_save(self, add=True)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\fields\files.py", line 341, in pre_save
+    file.save(file.name, file.file, save=False)
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\fields\files.py", line 100, in save
+    name = self.field.generate_filename(self.instance, name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\fields\files.py", line 361, in generate_filename
+    return self.storage.generate_filename(filename)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\utils\functional.py", line 251, in inner
+    self._setup()
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\core\files\storage\__init__.py", line 23, in _setup
+    self._wrapped = storages[DEFAULT_STORAGE_ALIAS]
+                    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\core\files\storage\handler.py", line 31, in __getitem__
+    raise InvalidStorageError(
+django.core.files.storage.handler.InvalidStorageError: Could not find config for 'default' in settings.STORAGES.
+[22/Aug/2026 22:01:02] "POST /api/gallery/ HTTP/1.1" 500 179548
+D:\Startup Idea\GYM ERP\backend\gymerp\settings.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+August 22, 2026 - 22:00:18
+Django version 6.1, using settings 'gymerp.settings'
+Starting WSGI development server at http://127.0.0.1:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.1/howto/deployment/
+Watching for file changes with StatReloader
+D:\Startup Idea\GYM ERP\backend\gymerp\urls.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+August 22, 2026 - 22:01:17
+Django version 6.1, using settings 'gymerp.settings'
+Starting WSGI development server at http://127.0.0.1:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.1/howto/deployment/
+Watching for file changes with StatReloader
+[22/Aug/2026 22:01:33] "POST /api/auth/login/ HTTP/1.1" 200 244
+[22/Aug/2026 22:01:33] "POST /api/auth/signup/ HTTP/1.1" 201 103
+[22/Aug/2026 22:01:34] "POST /api/auth/login/ HTTP/1.1" 200 244
+[22/Aug/2026 22:01:34] "GET /api/auth/me/ HTTP/1.1" 200 295
+[22/Aug/2026 22:01:34] "POST /api/attendance/check_in/ HTTP/1.1" 201 85
+Bad Request: /api/attendance/check_in/
+[22/Aug/2026 22:01:34] "POST /api/attendance/check_in/ HTTP/1.1" 400 32
+[22/Aug/2026 22:01:34] "GET /api/attendance/current/ HTTP/1.1" 200 85
+[22/Aug/2026 22:01:34] "POST /api/attendance/check_out/ HTTP/1.1" 200 110
+[22/Aug/2026 22:01:34] "GET /api/attendance/current/ HTTP/1.1" 204 0
+[22/Aug/2026 22:01:34] "POST /api/workouts/exercises/ HTTP/1.1" 201 88
+Forbidden: /api/workouts/exercises/
+[22/Aug/2026 22:01:34] "POST /api/workouts/exercises/ HTTP/1.1" 403 63
+[22/Aug/2026 22:01:34] "POST /api/workouts/sessions/ HTTP/1.1" 201 65
+[22/Aug/2026 22:01:34] "POST /api/workouts/logs/ HTTP/1.1" 201 142
+[22/Aug/2026 22:01:34] "GET /api/workouts/sessions/progress/?exercise=2 HTTP/1.1" 200 66
+[22/Aug/2026 22:01:34] "POST /api/announcements/ HTTP/1.1" 201 196
+[22/Aug/2026 22:01:34] "GET /api/announcements/ HTTP/1.1" 200 445
+Forbidden: /api/announcements/2/
+[22/Aug/2026 22:01:34] "DELETE /api/announcements/2/ HTTP/1.1" 403 63
+[22/Aug/2026 22:01:34] "POST /api/instructors/ HTTP/1.1" 201 98
+[22/Aug/2026 22:01:34] "GET /api/instructors/ HTTP/1.1" 200 249
+[22/Aug/2026 22:01:34] "POST /api/schedule/ HTTP/1.1" 201 176
+[22/Aug/2026 22:01:34] "GET /api/schedule/ HTTP/1.1" 200 405
+Internal Server Error: /api/gallery/
+Traceback (most recent call last):
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\core\files\storage\handler.py", line 26, in __getitem__
+    return self._storages[alias]
+           ~~~~~~~~~~~~~~^^^^^^^
+KeyError: 'default'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\core\files\storage\handler.py", line 29, in __getitem__
+    params = self.backends[alias]
+             ~~~~~~~~~~~~~^^^^^^^
+KeyError: 'default'
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\core\handlers\exception.py", line 56, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\core\handlers\base.py", line 199, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\views\decorators\csrf.py", line 64, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\viewsets.py", line 124, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\views.py", line 526, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\views.py", line 474, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\views.py", line 485, in raise_uncaught_exception
+    raise exc
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\views.py", line 523, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\mixins.py", line 19, in create
+    self.perform_create(serializer)
+  File "D:\Startup Idea\GYM ERP\backend\gallery\views.py", line 33, in perform_create
+    serializer.save(uploader=self.request.user)
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\serializers.py", line 208, in save
+    self.instance = self.create(validated_data)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\serializers.py", line 1008, in create
+    instance = ModelClass._default_manager.create(**validated_data)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\manager.py", line 87, in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\query.py", line 713, in create
+    obj.save(force_insert=True, using=self.db)
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\base.py", line 904, in save
+    self.save_base(
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\base.py", line 996, in save_base
+    updated = self._save_table(
+              ^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\base.py", line 1190, in _save_table
+    else field.pre_save(self, add=True)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\fields\files.py", line 341, in pre_save
+    file.save(file.name, file.file, save=False)
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\fields\files.py", line 100, in save
+    name = self.field.generate_filename(self.instance, name)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\db\models\fields\files.py", line 361, in generate_filename
+    return self.storage.generate_filename(filename)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\utils\functional.py", line 251, in inner
+    self._setup()
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\core\files\storage\__init__.py", line 23, in _setup
+    self._wrapped = storages[DEFAULT_STORAGE_ALIAS]
+                    ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\core\files\storage\handler.py", line 31, in __getitem__
+    raise InvalidStorageError(
+django.core.files.storage.handler.InvalidStorageError: Could not find config for 'default' in settings.STORAGES.
+[22/Aug/2026 22:01:34] "POST /api/gallery/ HTTP/1.1" 500 179287
+D:\Startup Idea\GYM ERP\backend\gymerp\settings.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+August 22, 2026 - 22:01:21
+Django version 6.1, using settings 'gymerp.settings'
+Starting WSGI development server at http://127.0.0.1:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.1/howto/deployment/
+Watching for file changes with StatReloader
+[22/Aug/2026 22:02:17] "POST /api/auth/login/ HTTP/1.1" 200 244
+[22/Aug/2026 22:02:18] "POST /api/auth/signup/ HTTP/1.1" 201 103
+[22/Aug/2026 22:02:18] "POST /api/auth/login/ HTTP/1.1" 200 244
+[22/Aug/2026 22:02:18] "GET /api/auth/me/ HTTP/1.1" 200 295
+[22/Aug/2026 22:02:18] "POST /api/attendance/check_in/ HTTP/1.1" 201 85
+Bad Request: /api/attendance/check_in/
+[22/Aug/2026 22:02:18] "POST /api/attendance/check_in/ HTTP/1.1" 400 32
+[22/Aug/2026 22:02:18] "GET /api/attendance/current/ HTTP/1.1" 200 85
+[22/Aug/2026 22:02:18] "POST /api/attendance/check_out/ HTTP/1.1" 200 110
+[22/Aug/2026 22:02:18] "GET /api/attendance/current/ HTTP/1.1" 204 0
+[22/Aug/2026 22:02:18] "POST /api/workouts/exercises/ HTTP/1.1" 201 88
+Forbidden: /api/workouts/exercises/
+[22/Aug/2026 22:02:18] "POST /api/workouts/exercises/ HTTP/1.1" 403 63
+[22/Aug/2026 22:02:18] "POST /api/workouts/sessions/ HTTP/1.1" 201 65
+[22/Aug/2026 22:02:18] "POST /api/workouts/logs/ HTTP/1.1" 201 142
+[22/Aug/2026 22:02:18] "GET /api/workouts/sessions/progress/?exercise=3 HTTP/1.1" 200 66
+[22/Aug/2026 22:02:18] "POST /api/announcements/ HTTP/1.1" 201 196
+[22/Aug/2026 22:02:18] "GET /api/announcements/ HTTP/1.1" 200 642
+Forbidden: /api/announcements/3/
+[22/Aug/2026 22:02:18] "DELETE /api/announcements/3/ HTTP/1.1" 403 63
+[22/Aug/2026 22:02:18] "POST /api/instructors/ HTTP/1.1" 201 98
+[22/Aug/2026 22:02:18] "GET /api/instructors/ HTTP/1.1" 200 348
+[22/Aug/2026 22:02:18] "POST /api/schedule/ HTTP/1.1" 201 176
+[22/Aug/2026 22:02:18] "GET /api/schedule/ HTTP/1.1" 200 582
+[22/Aug/2026 22:02:18] "POST /api/gallery/ HTTP/1.1" 201 200
+[22/Aug/2026 22:02:18] "GET /api/gallery/ HTTP/1.1" 200 252
+[22/Aug/2026 22:02:18] "POST /api/gallery/1/approve/ HTTP/1.1" 200 199
+[22/Aug/2026 22:02:18] "GET /api/gallery/ HTTP/1.1" 200 251
+[22/Aug/2026 22:02:18] "GET /api/auth/admin/members/ HTTP/1.1" 200 1111
+Forbidden: /api/auth/admin/members/
+[22/Aug/2026 22:02:18] "GET /api/auth/admin/members/ HTTP/1.1" 403 63
+Internal Server Error: /api/auth/admin/members/export/
+Traceback (most recent call last):
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\core\handlers\exception.py", line 56, in inner
+    response = get_response(request)
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\core\handlers\base.py", line 199, in _get_response
+    response = wrapped_callback(request, *callback_args, **callback_kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\views\decorators\csrf.py", line 64, in _view_wrapper
+    return view_func(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\django\views\generic\base.py", line 105, in view
+    return self.dispatch(request, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\views.py", line 526, in dispatch
+    response = self.handle_exception(exc)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\views.py", line 474, in handle_exception
+    self.raise_uncaught_exception(exc)
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\views.py", line 485, in raise_uncaught_exception
+    raise exc
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\rest_framework\views.py", line 523, in dispatch
+    response = handler(request, *args, **kwargs)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\accounts\views.py", line 167, in get
+    workbook.save(response)
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\openpyxl\workbook\workbook.py", line 386, in save
+    save_workbook(self, filename)
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\openpyxl\writer\excel.py", line 294, in save_workbook
+    writer.save()
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\openpyxl\writer\excel.py", line 275, in save
+    self.write_data()
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\openpyxl\writer\excel.py", line 77, in write_data
+    self._write_worksheets()
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\openpyxl\writer\excel.py", line 215, in _write_worksheets
+    self.write_worksheet(ws)
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\openpyxl\writer\excel.py", line 200, in write_worksheet
+    writer.write()
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\openpyxl\worksheet\_writer.py", line 359, in write
+    self.write_rows()
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\openpyxl\worksheet\_writer.py", line 125, in write_rows
+    self.write_row(xf, row, row_idx)
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\openpyxl\worksheet\_writer.py", line 147, in write_row
+    write_cell(xf, self.ws, cell, cell.has_style)
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\openpyxl\cell\_writer.py", line 47, in etree_write_cell
+    value, attributes = _set_attributes(cell, styled)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Startup Idea\GYM ERP\backend\venv\Lib\site-packages\openpyxl\cell\_writer.py", line 30, in _set_attributes
+    raise TypeError("Excel does not support timezones in datetimes. "
+TypeError: Excel does not support timezones in datetimes. The tzinfo in the datetime/time object must be set to None.
+[22/Aug/2026 22:02:18] "GET /api/auth/admin/members/export/ HTTP/1.1" 500 148595
+D:\Startup Idea\GYM ERP\backend\accounts\serializers.py changed, reloading.
+Performing system checks...
+
+System check identified no issues (0 silenced).
+August 22, 2026 - 22:02:09
+Django version 6.1, using settings 'gymerp.settings'
+Starting WSGI development server at http://127.0.0.1:8000/
+Quit the server with CTRL-BREAK.
+
+WARNING: This is a development server. Do not use it in a production setting. Use a production WSGI or ASGI server instead.
+For more information on production servers see: https://docs.djangoproject.com/en/6.1/howto/deployment/
+Watching for file changes with StatReloader
+[22/Aug/2026 22:02:52] "POST /api/auth/login/ HTTP/1.1" 200 244
+[22/Aug/2026 22:02:53] "POST /api/auth/signup/ HTTP/1.1" 201 103
+[22/Aug/2026 22:02:53] "POST /api/auth/login/ HTTP/1.1" 200 244
+[22/Aug/2026 22:02:53] "GET /api/auth/me/ HTTP/1.1" 200 295
+[22/Aug/2026 22:02:53] "POST /api/attendance/check_in/ HTTP/1.1" 201 85
+Bad Request: /api/attendance/check_in/
+[22/Aug/2026 22:02:53] "POST /api/attendance/check_in/ HTTP/1.1" 400 32
+[22/Aug/2026 22:02:53] "GET /api/attendance/current/ HTTP/1.1" 200 85
+[22/Aug/2026 22:02:53] "POST /api/attendance/check_out/ HTTP/1.1" 200 110
+[22/Aug/2026 22:02:53] "GET /api/attendance/current/ HTTP/1.1" 204 0
+[22/Aug/2026 22:02:53] "POST /api/workouts/exercises/ HTTP/1.1" 201 88
+Forbidden: /api/workouts/exercises/
+[22/Aug/2026 22:02:53] "POST /api/workouts/exercises/ HTTP/1.1" 403 63
+[22/Aug/2026 22:02:53] "POST /api/workouts/sessions/ HTTP/1.1" 201 65
+[22/Aug/2026 22:02:53] "POST /api/workouts/logs/ HTTP/1.1" 201 142
+[22/Aug/2026 22:02:53] "GET /api/workouts/sessions/progress/?exercise=4 HTTP/1.1" 200 66
+[22/Aug/2026 22:02:53] "POST /api/announcements/ HTTP/1.1" 201 196
+[22/Aug/2026 22:02:53] "GET /api/announcements/ HTTP/1.1" 200 839
+Forbidden: /api/announcements/4/
+[22/Aug/2026 22:02:53] "DELETE /api/announcements/4/ HTTP/1.1" 403 63
+[22/Aug/2026 22:02:53] "POST /api/instructors/ HTTP/1.1" 201 98
+[22/Aug/2026 22:02:53] "GET /api/instructors/ HTTP/1.1" 200 447
+[22/Aug/2026 22:02:53] "POST /api/schedule/ HTTP/1.1" 201 176
+[22/Aug/2026 22:02:53] "GET /api/schedule/ HTTP/1.1" 200 759
+[22/Aug/2026 22:02:53] "POST /api/gallery/ HTTP/1.1" 201 208
+[22/Aug/2026 22:02:53] "GET /api/gallery/ HTTP/1.1" 200 460
+[22/Aug/2026 22:02:53] "POST /api/gallery/2/approve/ HTTP/1.1" 200 207
+[22/Aug/2026 22:02:53] "GET /api/gallery/ HTTP/1.1" 200 459
+[22/Aug/2026 22:02:53] "GET /api/auth/admin/members/ HTTP/1.1" 200 1358
+Forbidden: /api/auth/admin/members/
+[22/Aug/2026 22:02:53] "GET /api/auth/admin/members/ HTTP/1.1" 403 63
+[22/Aug/2026 22:02:53] "GET /api/auth/admin/members/export/ HTTP/1.1" 200 5370
+[22/Aug/2026 22:02:53] "POST /api/auth/refresh/ HTTP/1.1" 200 244
+[22/Aug/2026 22:02:53] "POST /api/auth/logout/ HTTP/1.1" 204 0
+Unauthorized: /api/auth/refresh/
+[22/Aug/2026 22:06:06] "POST /api/auth/refresh/ HTTP/1.1" 401 37
+Unauthorized: /api/auth/refresh/
+Unauthorized: /api/auth/refresh/
+[22/Aug/2026 22:06:06] "POST /api/auth/refresh/ HTTP/1.1" 401 37
+[22/Aug/2026 22:06:06] "POST /api/auth/refresh/ HTTP/1.1" 401 37
+Unauthorized: /api/auth/refresh/
+Unauthorized: /api/auth/refresh/
+[22/Aug/2026 22:06:06] "POST /api/auth/refresh/ HTTP/1.1" 401 37
+[22/Aug/2026 22:06:06] "POST /api/auth/refresh/ HTTP/1.1" 401 37
+Unauthorized: /api/auth/refresh/
+[22/Aug/2026 22:06:06] "POST /api/auth/refresh/ HTTP/1.1" 401 37
+[22/Aug/2026 22:08:58] "OPTIONS /api/auth/signup/ HTTP/1.1" 200 0
+Bad Request: /api/auth/signup/
+[22/Aug/2026 22:08:58] "POST /api/auth/signup/ HTTP/1.1" 400 114
+[22/Aug/2026 22:09:06] "POST /api/auth/signup/ HTTP/1.1" 201 90
+[22/Aug/2026 22:09:06] "OPTIONS /api/auth/login/ HTTP/1.1" 200 0
+[22/Aug/2026 22:09:06] "POST /api/auth/login/ HTTP/1.1" 200 244
+[22/Aug/2026 22:09:06] "OPTIONS /api/auth/me/ HTTP/1.1" 200 0
+[22/Aug/2026 22:09:06] "GET /api/auth/me/ HTTP/1.1" 200 282
+[22/Aug/2026 22:09:06] "OPTIONS /api/attendance/current/ HTTP/1.1" 200 0
+[22/Aug/2026 22:09:06] "OPTIONS /api/attendance/ HTTP/1.1" 200 0
+[22/Aug/2026 22:09:06] "GET /api/attendance/ HTTP/1.1" 200 52
+[22/Aug/2026 22:09:06] "GET /api/attendance/current/ HTTP/1.1" 204 0
+[22/Aug/2026 22:09:13] "OPTIONS /api/workouts/exercises/ HTTP/1.1" 200 0
+[22/Aug/2026 22:09:13] "OPTIONS /api/workouts/sessions/ HTTP/1.1" 200 0
+[22/Aug/2026 22:09:13] "GET /api/workouts/sessions/ HTTP/1.1" 200 52
+[22/Aug/2026 22:09:13] "GET /api/workouts/exercises/ HTTP/1.1" 200 407
+[22/Aug/2026 22:09:20] "OPTIONS /api/workouts/sessions/progress/?exercise=1 HTTP/1.1" 200 0
+[22/Aug/2026 22:09:20] "GET /api/workouts/sessions/progress/?exercise=1 HTTP/1.1" 200 2
+[22/Aug/2026 22:09:23] "OPTIONS /api/announcements/ HTTP/1.1" 200 0
+[22/Aug/2026 22:09:23] "GET /api/announcements/ HTTP/1.1" 200 839
+[22/Aug/2026 22:09:25] "OPTIONS /api/instructors/ HTTP/1.1" 200 0
+[22/Aug/2026 22:09:25] "GET /api/instructors/ HTTP/1.1" 200 447
+[22/Aug/2026 22:09:28] "OPTIONS /api/schedule/ HTTP/1.1" 200 0
+[22/Aug/2026 22:09:28] "GET /api/schedule/ HTTP/1.1" 200 759
+[22/Aug/2026 22:09:29] "OPTIONS /api/gallery/ HTTP/1.1" 200 0
+[22/Aug/2026 22:09:29] "GET /api/gallery/ HTTP/1.1" 200 459
+[22/Aug/2026 22:09:29] "GET /media/gallery/test.png HTTP/1.1" 200 75
+[22/Aug/2026 22:09:29] "GET /media/gallery/test_Zq9g1k1.png HTTP/1.1" 200 75
+[22/Aug/2026 22:09:36] "OPTIONS /api/attendance/check_in/ HTTP/1.1" 200 0
+[22/Aug/2026 22:09:36] "POST /api/attendance/check_in/ HTTP/1.1" 201 85
+[22/Aug/2026 22:09:36] "GET /api/attendance/current/ HTTP/1.1" 200 85
+[22/Aug/2026 22:09:36] "GET /api/attendance/ HTTP/1.1" 200 137
+[22/Aug/2026 22:09:41] "OPTIONS /api/attendance/check_out/ HTTP/1.1" 200 0
+[22/Aug/2026 22:09:41] "POST /api/attendance/check_out/ HTTP/1.1" 200 110
+[22/Aug/2026 22:09:41] "GET /api/attendance/current/ HTTP/1.1" 204 0
+[22/Aug/2026 22:09:41] "GET /api/attendance/ HTTP/1.1" 200 162
+[22/Aug/2026 22:09:46] "GET /api/workouts/exercises/ HTTP/1.1" 200 407
+[22/Aug/2026 22:09:46] "GET /api/workouts/sessions/ HTTP/1.1" 200 52
+[22/Aug/2026 22:09:48] "POST /api/workouts/sessions/ HTTP/1.1" 201 58
+[22/Aug/2026 22:09:48] "GET /api/workouts/sessions/ HTTP/1.1" 200 110
+Unauthorized: /api/auth/refresh/
+Unauthorized: /api/auth/refresh/
+[23/Aug/2026 00:23:18] "POST /api/auth/refresh/ HTTP/1.1" 401 37
+[23/Aug/2026 00:23:18] "POST /api/auth/refresh/ HTTP/1.1" 401 37
+Unauthorized: /api/auth/refresh/
+[23/Aug/2026 00:23:18] "POST /api/auth/refresh/ HTTP/1.1" 401 37
