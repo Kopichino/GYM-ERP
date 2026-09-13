@@ -1,4 +1,5 @@
 import BodyStatsPanel from "../components/BodyStatsPanel";
+import ChangePasswordCard from "../components/ChangePasswordCard";
 import { PageHeader } from "../components/ui";
 import { useAuthStore } from "../store/authStore";
 
@@ -8,8 +9,14 @@ export default function ProfilePage() {
 
   return (
     <div>
-      <PageHeader title={name ? `${name}'s Profile` : "My Profile"} subtitle="Your measurements, BMI and goals." />
+      <PageHeader
+        title={name ? `${name}'s Profile` : "My Profile"}
+        subtitle="Your measurements, BMI, goals and password."
+      />
       <BodyStatsPanel />
+      <div className="mt-6">
+        <ChangePasswordCard />
+      </div>
     </div>
   );
 }

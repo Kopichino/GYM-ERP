@@ -87,24 +87,35 @@ export default function AuthLayout({
 
   const form = (
     <div
-      className={`flex w-full flex-col bg-[var(--color-surface)] px-6 py-8 sm:px-10 lg:w-[44%] lg:max-w-[560px] ${
-        isSignup ? "lg:order-2" : ""
+      className={`flex w-full flex-col bg-[var(--color-surface)] px-6 py-8 sm:px-10 ${
+        // Signup's column is wider: six fields and a two-up name row want the
+        // room, and the width comes out of the brand half, which had plenty.
+        isSignup ? "lg:order-2 lg:w-[42%] lg:max-w-[640px]" : "lg:w-[44%] lg:max-w-[560px]"
       }`}
     >
       <BrandMark className="font-display text-2xl tracking-wide text-[var(--color-text)]" />
 
-      {/* Login is centred in whatever space is left; signup is top-aligned,
-          because a six-field form centred on a short screen ends up with its
-          submit button below the fold. */}
-      <div className={`flex flex-1 py-8 ${isSignup ? "items-start pt-10" : "items-center"}`}>
-        <div className="w-full max-w-sm">
+      {/* Login is centred in whatever space is left. Signup is top-aligned on
+          a short screen, because a six-field form centred there ends up with
+          its submit button below the fold -- and centred once the screen is
+          tall enough to hold it (`.auth-signup-body` in index.css), because
+          top-aligned on a tall monitor left the bottom half of the column
+          empty. */}
+      <div
+        className={`flex flex-1 py-8 ${isSignup ? "auth-signup-body items-start pt-10" : "items-center"}`}
+      >
+        <div className={`w-full ${isSignup ? "max-w-md" : "max-w-sm"}`}>
           <h1
-            className="font-display text-4xl uppercase tracking-wide"
+            className={`font-display uppercase tracking-wide ${isSignup ? "text-5xl" : "text-4xl"}`}
             style={{ color: isSignup ? lead : "var(--color-text)" }}
           >
             {title}
           </h1>
-          <p className="mb-6 mt-1 text-sm text-[var(--color-text-muted)]">{subtitle}</p>
+          <p
+            className={`mt-1 text-[var(--color-text-muted)] ${isSignup ? "mb-8 text-base" : "mb-6 text-sm"}`}
+          >
+            {subtitle}
+          </p>
           {children}
         </div>
       </div>
@@ -216,41 +227,48 @@ function LoginAside({ tagline }: { tagline: string }) {
  */
 function SignupAside({ gymName, accent }: { gymName: string; accent: string }) {
   return (
-    <>
+    // Centred in the panel, and side by side once the panel is wide enough.
+    //
+    // This used to hug the panel's left edge at a fixed 300px, which on a wide
+    // monitor left roughly 800px of empty panel between it and the form, so the
+    // two halves read as unrelated. Centring moves that space to either side
+    // rather than the middle, and on a wide screen the card and the steps sit
+    // next to each other instead of stacked in a narrow strip.
+    <div className="mx-auto flex w-full max-w-lg flex-col 2xl:max-w-5xl 2xl:flex-row 2xl:items-center 2xl:gap-16">
       {/* A membership card rather than the barbell: it is the thing being
           created on the other half of the screen. */}
       <div
-        className="mb-10 w-[300px] rounded-xl border p-5"
+        className="mb-12 w-[360px] shrink-0 rounded-2xl border p-6 2xl:mb-0 2xl:w-[420px]"
         style={{
           borderColor: "var(--color-border)",
           background:
             "linear-gradient(150deg, var(--color-surface-2), var(--color-surface))",
-          boxShadow: `0 18px 50px -20px color-mix(in srgb, ${accent} 45%, transparent)`,
+          boxShadow: `0 24px 60px -24px color-mix(in srgb, ${accent} 50%, transparent)`,
         }}
       >
         <div className="flex items-start justify-between">
-          <span className="font-display text-xl tracking-wide text-[var(--color-text)]">
+          <span className="font-display text-2xl tracking-wide text-[var(--color-text)]">
             {gymName}
           </span>
           <span
-            className="rounded px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+            className="rounded px-2.5 py-1 text-xs font-semibold uppercase tracking-wide"
             style={{ background: accent, color: "var(--color-on-accent)" }}
           >
             Member
           </span>
         </div>
 
-        <div className="mt-8 flex items-end justify-between">
+        <div className="mt-12 flex items-end justify-between">
           <div>
-            <p className="text-[10px] uppercase tracking-wide text-[var(--color-text-muted)]">
+            <p className="text-xs uppercase tracking-wide text-[var(--color-text-muted)]">
               Your name here
             </p>
-            <p className="mt-0.5 font-display text-2xl tracking-wide text-[var(--color-text)]">
+            <p className="mt-1 font-display text-3xl tracking-wide text-[var(--color-text)]">
               — — — —
             </p>
           </div>
           {/* A suggestion of the check-in QR, not a real one. */}
-          <div className="grid h-12 w-12 grid-cols-4 grid-rows-4 gap-[2px] opacity-70">
+          <div className="grid h-16 w-16 grid-cols-4 grid-rows-4 gap-[3px] opacity-70">
             {Array.from({ length: 16 }, (_, i) => (
               <span
                 key={i}
@@ -267,24 +285,26 @@ function SignupAside({ gymName, accent }: { gymName: string; accent: string }) {
         </div>
       </div>
 
-      <ol className="flex max-w-md flex-col gap-5">
+      <ol className="flex flex-col gap-7 2xl:flex-1">
         {JOINING_STEPS.map((step, index) => (
           <li key={step.title} className="flex gap-4">
             <span
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border font-display text-sm"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border-2 font-display text-lg"
               style={{ borderColor: accent, color: accent }}
             >
               {index + 1}
             </span>
-            <span>
-              <span className="block text-sm font-semibold text-[var(--color-text)]">
+            <span className="pt-1">
+              <span className="block text-base font-semibold text-[var(--color-text)]">
                 {step.title}
               </span>
-              <span className="block text-sm text-[var(--color-text-muted)]">{step.body}</span>
+              <span className="mt-0.5 block text-[15px] leading-relaxed text-[var(--color-text-muted)]">
+                {step.body}
+              </span>
             </span>
           </li>
         ))}
       </ol>
-    </>
+    </div>
   );
 }

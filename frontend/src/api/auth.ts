@@ -39,3 +39,25 @@ export async function fetchMe() {
   const res = await api.get<CurrentUser>("/auth/me/");
   return res.data;
 }
+
+/** Resolves the same way whether or not the email has an account. */
+export async function requestPasswordReset(email: string) {
+  await api.post("/auth/password/forgot/", { email });
+}
+
+export async function resetPassword(payload: { uid: string; token: string; password: string }) {
+  await api.post("/auth/password/reset/", payload);
+}
+
+/**
+ * Change your own password. Resolves to a fresh access token: the server ends
+ * every session, this one included, then re-issues this one so the page you
+ * changed it on stays signed in.
+ */
+export async function changePassword(payload: {
+  current_password: string;
+  new_password: string;
+}) {
+  const res = await api.post<{ access: string }>("/auth/password/change/", payload);
+  return res.data.access;
+}

@@ -5,7 +5,7 @@ from rest_framework.test import APITestCase
 from core.testing import TenantAPIMixin
 
 from accounts.models import MembershipStatus, MemberProfile, Role
-from instructors.models import Instructor
+from tenancy.models import Membership
 
 from .mapping import BILLING, MEMBER, TRAINER, detect_columns
 from .services import to_date, to_decimal
@@ -119,6 +119,11 @@ class ImportEndpointTests(TenantAPIMixin, APITestCase):
         self.assertEqual(str(arjun.profile.join_date), "2024-06-01")
         # Imported accounts can't be logged into until a password is set.
         self.assertFalse(arjun.has_usable_password())
+        # Imported into this gym, so a member of it -- without a Membership the
+        # account would have a password and nowhere to use it.
+        self.assertTrue(
+            Membership.objects.filter(user=arjun, tenant=self.tenant, role=Role.MEMBER).exists()
+        )
 
         priya = User.objects.get(email="priya@example.com")
         self.assertEqual(priya.profile.membership_status, MembershipStatus.PAUSED)
@@ -140,10 +145,22 @@ class ImportEndpointTests(TenantAPIMixin, APITestCase):
         resp = self.client.post("/api/import/commit/", {"kind": "trainers", "file": self._csv(csv)})
         self.assertEqual(resp.data["created"], 1)
 
-        instructor = Instructor.objects.get(name="Tara Coach")
-        self.assertIsNotNone(instructor.user)
-        self.assertEqual(instructor.user.role, Role.TRAINER)
-        self.assertFalse(instructor.user.is_staff)
+        tara = User.objects.get(email="tara@example.com")
+        self.assertEqual(tara.role, Role.TRAINER)
+        self.assertFalse(tara.is_staff)
+        self.assertEqual(tara.get_full_name(), "Tara Coach")
+        self.assertTrue(
+            Membership.objects.filter(user=tara, tenant=self.tenant, role=Role.TRAINER).exists()
+        )
+
+    def test_a_trainer_row_without_an_email_is_skipped_not_lost(self):
+        """A trainer exists only as an account now, and an account needs an
+        email -- so such a row is reported rather than committed to nothing."""
+        self.client.force_authenticate(self.admin)
+        csv = "Trainer Name,Email,Specialization\nNo Email Coach,,Yoga\n"
+        resp = self.client.post("/api/import/commit/", {"kind": "trainers", "file": self._csv(csv)})
+        self.assertEqual(resp.data["created"], 0)
+        self.assertEqual(resp.data["skipped"], 1)
 
     def test_billing_row_without_matching_member_is_skipped(self):
         self.client.force_authenticate(self.admin)

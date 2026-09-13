@@ -13,6 +13,8 @@ export interface Member {
   trainer_name: string | null;
   biometric_id: string | null;
   last_check_in: string | null;
+  /** False for an account created without one -- imported members, mostly. */
+  has_password: boolean;
 }
 
 export async function fetchMembers() {
@@ -30,4 +32,9 @@ export async function downloadMembersExcel() {
   link.click();
   link.remove();
   window.URL.revokeObjectURL(url);
+}
+
+/** Give a member of this gym a password -- for accounts created without one. */
+export async function setMemberPassword(id: number, password: string) {
+  await api.post(`/auth/admin/members/${id}/set-password/`, { password });
 }

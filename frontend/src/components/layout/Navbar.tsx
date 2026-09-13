@@ -1,48 +1,10 @@
 import { AnimatePresence, motion } from "framer-motion";
 import ThemeToggle from "../ThemeToggle";
 import { useState } from "react";
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { logout } from "../../api/auth";
 import { useAuthStore } from "../../store/authStore";
 import BrandMark from "../BrandMark";
-import ScrollableTabs from "../ScrollableTabs";
-
-interface NavItem {
-  to: string;
-  label: string;
-  end?: boolean;
-}
-
-const memberLinks: NavItem[] = [
-  { to: "/dashboard", label: "Dashboard" },
-  { to: "/workouts", label: "Workouts" },
-  { to: "/split", label: "My Split" },
-  { to: "/diet", label: "My Diet" },
-  { to: "/exercises", label: "Exercises" },
-  { to: "/progress", label: "Progress" },
-  { to: "/achievements", label: "Achievements" },
-  { to: "/profile", label: "Profile" },
-  { to: "/billing", label: "Billing" },
-  { to: "/referrals", label: "Refer a Friend" },
-  { to: "/announcements", label: "Announcements" },
-  { to: "/book-trainer", label: "Book a Trainer" },
-  { to: "/instructors", label: "Instructors" },
-  { to: "/schedule", label: "Schedule" },
-  { to: "/gallery", label: "Gallery" },
-];
-
-const trainerLinks: NavItem[] = [
-  { to: "/trainer", label: "Dashboard", end: true },
-  { to: "/trainer/members", label: "My Members" },
-  { to: "/trainer/schedule", label: "My Classes" },
-  { to: "/trainer/pt", label: "Personal Training" },
-  { to: "/trainer/earnings", label: "My Earnings" },
-  { to: "/trainer/profile", label: "My Profile" },
-  { to: "/exercises", label: "Exercises" },
-  { to: "/announcements", label: "Announcements" },
-  { to: "/schedule", label: "Schedule" },
-  { to: "/gallery", label: "Gallery" },
-];
 
 function HamburgerIcon({ open }: { open: boolean }) {
   return (
@@ -96,17 +58,12 @@ export default function Navbar() {
     }
   }
 
-  // Admins navigate via the admin dashboard's own tab strip, so the top bar
-  // stays link-free for them rather than showing member pages they don't use.
-  const links =
-    user?.role === "admin" ? [] : user?.role === "trainer" ? trainerLinks : memberLinks;
-
-  const linkClass = ({ isActive }: { isActive: boolean }) =>
-    `whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-      isActive
-        ? "bg-[var(--color-accent)] text-white shadow-[0_0_16px_-2px_var(--color-accent)]"
-        : "text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-    }`;
+  // No page links up here for any role. Every portal navigates from its grouped
+  // rail on the left, so the top bar is just the brand and the account actions
+  // -- a strip of links above the rail would give each page two ways in, and
+  // the old strip hid half of them off the right edge. The rail spans the page,
+  // so the bar does too wherever there is one.
+  const wide = isAdmin || user?.role === "member" || user?.role === "trainer";
 
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--color-border)] bg-[var(--color-surface)]/90 backdrop-blur">
@@ -115,21 +72,10 @@ export default function Navbar() {
           from the edge on the wider admin layout. */}
       <nav
         className={`mx-auto flex items-center justify-between gap-4 px-4 py-3 ${
-          isAdmin ? "max-w-[1600px]" : "max-w-6xl"
+          wide ? "max-w-[1600px]" : "max-w-6xl"
         }`}
       >
         <BrandMark className="font-display text-2xl tracking-wide text-[var(--color-text)]" />
-        {links.length > 0 && (
-          <div className="hidden min-w-0 flex-1 md:flex">
-            <ScrollableTabs>
-              {links.map((link) => (
-                <NavLink key={link.to} to={link.to} end={link.end} className={linkClass}>
-                  {link.label}
-                </NavLink>
-              ))}
-            </ScrollableTabs>
-          </div>
-        )}
         <div className="flex items-center gap-2">
           {/* Beside Log out rather than inside the mobile menu: it is a
               display preference, wanted at the moment the screen is the wrong
@@ -162,23 +108,12 @@ export default function Navbar() {
             className="overflow-hidden border-t border-[var(--color-border)] md:hidden"
           >
             <div className="flex flex-col gap-1 px-4 py-3">
-              {links.map((link) => (
-                <NavLink
-                  key={link.to}
-                  to={link.to}
-                  end={link.end}
-                  className={linkClass}
-                  onClick={() => setMenuOpen(false)}
-                >
-                  {link.label}
-                </NavLink>
-              ))}
               <button
                 onClick={() => {
                   setMenuOpen(false);
                   handleLogout();
                 }}
-                className={`mt-2 text-left ${LOGOUT_CLASS}`}
+                className={`text-left ${LOGOUT_CLASS}`}
               >
                 Log out
               </button>

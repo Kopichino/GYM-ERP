@@ -140,9 +140,9 @@ export default function SchedulePage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <h2 className="truncate font-semibold text-[var(--color-text)]">{s.title}</h2>
-                      {s.instructor_name && (
+                      {s.trainer_name && (
                         <p className="truncate text-xs text-[var(--color-text-muted)]">
-                          with {s.instructor_name}
+                          with {s.trainer_name}
                         </p>
                       )}
                     </div>

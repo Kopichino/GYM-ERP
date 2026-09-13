@@ -116,7 +116,15 @@ class AdminMemberSerializer(serializers.ModelSerializer):
             "trainer_name",
             "biometric_id",
             "last_check_in",
+            "has_password",
         ]
+
+    #: False for an account created without one -- imported members, mostly --
+    #: so the admin screen can say who cannot log in yet.
+    has_password = serializers.SerializerMethodField()
+
+    def get_has_password(self, obj):
+        return obj.has_usable_password()
 
     def get_trainer_name(self, obj):
         trainer = getattr(obj.profile, "trainer", None) if hasattr(obj, "profile") else None
@@ -163,6 +171,16 @@ class SignupSerializer(serializers.ModelSerializer):
         user.set_password(password)
         user.save()
         MemberProfile.objects.create(user=user)
+        # Signing up is joining *this* gym, which the request names in its path
+        # or host. Access is read off Membership, so without this the new member
+        # could log in and see nothing, and would not be on the admin's member
+        # list either. With no gym in scope there is nothing to join.
+        from tenancy import context
+        from tenancy.models import Membership
+
+        tenant = context.get()
+        if tenant is not None:
+            Membership.objects.get_or_create(user=user, tenant=tenant, role=Role.MEMBER)
         if referral_code:
             # Imported here: accounts is the lower-level app, and a module-level
             # import would make referrals a hard dependency of signing up.
@@ -224,16 +242,35 @@ class AdminUserSerializer(serializers.ModelSerializer):
             # index, so an absent id is stored as NULL.
             biometric_id=profile_data.get("biometric_id") or None,
         )
+        # An account made here belongs here. Access is read off Membership, and
+        # this list is scoped by it -- so without one, a trainer the admin has
+        # just added would log in to find nothing, and vanish from this screen.
+        from tenancy import context
+        from tenancy.models import Membership
+
+        Membership.objects.get_or_create(user=user, tenant=context.require(), role=user.role)
         return user
 
     def update(self, instance, validated_data):
         profile_data = validated_data.pop("profile", {})
         password = validated_data.pop("password", "")
+        previous_role = instance.role
         for field, value in validated_data.items():
             setattr(instance, field, value)
         if password:
             instance.set_password(password)
         instance.save()
+
+        if instance.role != previous_role:
+            # The role that decides access lives on Membership, so a promotion
+            # made here has to land there too -- otherwise a new trainer keeps a
+            # member's access at this gym and the change does nothing.
+            from tenancy import context
+            from tenancy.models import Membership
+
+            tenant = context.require()
+            Membership.objects.get_or_create(user=instance, tenant=tenant, role=instance.role)
+            Membership.objects.filter(user=instance, tenant=tenant, role=previous_role).delete()
 
         if password:
             # A new password has to end the sessions the old one opened.

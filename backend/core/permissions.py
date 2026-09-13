@@ -74,7 +74,7 @@ class IsTenantMember(BasePermission):
 class IsAdminOrReadOnly(BasePermission):
     """Anyone who belongs here can read; only an admin here can write.
 
-    Used for announcements, instructors, schedule and gallery moderation.
+    Used for announcements, schedule and gallery moderation.
     Reading now requires membership rather than merely being signed in --
     otherwise a stranger could read one gym's noticeboard through another
     gym's login.

@@ -7,7 +7,17 @@ import { useBranding } from "../hooks/useBranding";
 import { useAuthStore } from "../store/authStore";
 
 const LABEL_CLS =
-  "mb-1 block text-xs uppercase tracking-wide text-[var(--color-text-muted)]";
+  "mb-1.5 block text-sm uppercase tracking-wide text-[var(--color-text-muted)]";
+
+/**
+ * Taller fields and a taller button.
+ *
+ * `h-` rather than `py-`: the shared field and button classes already set
+ * `py-2`, and two padding utilities on one element resolve by their order in
+ * the generated stylesheet rather than by which was written last -- so an
+ * added `py-3` may simply lose. Nothing sets a height, so this always wins.
+ */
+const FIELD_CLS = "h-12";
 
 export default function SignupPage() {
   const [form, setForm] = useState({
@@ -62,7 +72,7 @@ export default function SignupPage() {
         </>
       }
     >
-      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {/* `htmlFor`/`id` rather than a wrapping label: the implicit
             association wasn't reaching the accessibility tree, which left the
             fields unnamed to a screen reader once the placeholders went. */}
@@ -72,6 +82,7 @@ export default function SignupPage() {
           </label>
           <Input
             id="signup-username"
+            className={FIELD_CLS}
             value={form.username}
             onChange={update("username")}
             autoComplete="username"
@@ -84,6 +95,7 @@ export default function SignupPage() {
           </label>
           <Input
             id="signup-email"
+            className={FIELD_CLS}
             type="email"
             value={form.email}
             onChange={update("email")}
@@ -91,13 +103,14 @@ export default function SignupPage() {
             required
           />
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-4">
           <div className="flex-1">
             <label htmlFor="signup-first" className={LABEL_CLS}>
               First name
             </label>
             <Input
               id="signup-first"
+              className={FIELD_CLS}
               value={form.first_name}
               onChange={update("first_name")}
               autoComplete="given-name"
@@ -109,6 +122,7 @@ export default function SignupPage() {
             </label>
             <Input
               id="signup-last"
+              className={FIELD_CLS}
               value={form.last_name}
               onChange={update("last_name")}
               autoComplete="family-name"
@@ -121,6 +135,7 @@ export default function SignupPage() {
           </label>
           <Input
             id="signup-password"
+            className={FIELD_CLS}
             type="password"
             value={form.password}
             onChange={update("password")}
@@ -134,12 +149,13 @@ export default function SignupPage() {
           </label>
           <Input
             id="signup-referral"
+            className={FIELD_CLS}
             value={form.referral_code}
             onChange={update("referral_code")}
           />
         </div>
         <ErrorText>{error}</ErrorText>
-        <Button type="submit" disabled={loading} className="mt-2 py-2.5">
+        <Button type="submit" disabled={loading} className="mt-3 h-12">
           {loading ? "Creating account..." : "Create account"}
         </Button>
       </form>

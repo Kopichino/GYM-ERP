@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     AvailabilityViewSet,
     PTSessionViewSet,
+    TrainerListView,
     TrainerSlotsView,
     UnavailableViewSet,
 )
@@ -15,4 +16,5 @@ router.register("sessions", PTSessionViewSet, basename="pt-session")
 
 urlpatterns = [
     path("slots/", TrainerSlotsView.as_view(), name="pt-slots"),
+    path("trainers/", TrainerListView.as_view(), name="pt-trainers"),
 ] + router.urls

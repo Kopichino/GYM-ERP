@@ -3,11 +3,9 @@ from django.db import models
 
 from tenancy.managers import TenantManager, UnscopedManager
 
-from instructors.models import Instructor
-
 
 class ClassSession(models.Model):
-    """An upcoming/scheduled class, e.g. "Yoga, Mon 6pm with Instructor X"."""
+    """An upcoming/scheduled class, e.g. "Yoga, Mon 6pm with Ravi"."""
     # The branch this belongs to. Operational data is isolated per building:
     # "who came in yesterday" is a question about a gym, not about a brand.
     # Nullable for now; the backfill fills it and a later migration requires it.
@@ -18,8 +16,17 @@ class ClassSession(models.Model):
     )
 
     title = models.CharField(max_length=150)
-    instructor = models.ForeignKey(
-        Instructor, on_delete=models.SET_NULL, null=True, blank=True, related_name="class_sessions"
+    #: The trainer running the class -- their own account. This used to point
+    #: at a separate instructor profile, but it is the same person who logs in,
+    #: takes the roster and marks who turned up, so a second record naming them
+    #: was only ever something to keep in step. Null for a class nobody in
+    #: particular runs.
+    trainer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="classes_run",
     )
     date = models.DateField()
     start_time = models.TimeField()

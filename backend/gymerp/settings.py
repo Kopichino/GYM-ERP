@@ -251,6 +251,9 @@ REST_FRAMEWORK = {
         # Per-username, so credential stuffing from rotating IPs is limited by
         # whose account it is aimed at rather than only by where it comes from.
         "login_attempt": "10/min",
+        # Forgot-password requests, per IP. Loose enough for a gym's shared
+        # Wi-Fi, tight enough that the endpoint is no use as a mail cannon.
+        "password_reset": "10/hour",
         "checkinout": "30/min",
         "checkout": "20/min",
         # Per lead key, not per IP -- a gym's form sits behind their CDN so
@@ -373,6 +376,15 @@ RENDER_SERVICE_ID = env("RENDER_SERVICE_ID", default="")
 DEFAULT_FROM_EMAIL = env(
     "DEFAULT_FROM_EMAIL", default=f"{GYM_NAME} <no-reply@example.com>"
 )
+
+# --- Password reset -----------------------------------------------------
+# Where the link in a reset email points: the frontend's own page, which posts
+# the new password back to the API. Must be the deployed frontend's address in
+# production, or members are emailed a link to localhost.
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
+# A day rather than Django's three: long enough to find the email, short enough
+# that one sitting in an old inbox is not a standing way into the account.
+PASSWORD_RESET_TIMEOUT = 60 * 60 * 24
 
 # --- Online payments (Razorpay) -----------------------------------------
 

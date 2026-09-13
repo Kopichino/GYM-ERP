@@ -1,6 +1,9 @@
 import openpyxl
 from django.conf import settings
+from django.contrib.auth import password_validation
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -22,6 +25,7 @@ from .serializers import (
     UserSerializer,
 )
 from .throttling import LoginAttemptThrottle
+from .tokens import revoke_refresh_tokens
 
 COOKIE_KWARGS = dict(
     httponly=True,
@@ -121,8 +125,26 @@ class MeView(generics.RetrieveUpdateAPIView):
 
 
 def _member_queryset():
+    """Members *of this gym*.
+
+    `User` is not tenant-scoped -- one account can belong to several gyms -- so
+    filtering on `role` alone listed every member on the platform, and the admin
+    screen and Excel export showed one gym's owner every other gym's members. A
+    Membership at the tenant in scope is what makes someone a member here.
+
+    One `filter()` call on purpose. Split across two, each condition could be met
+    by a *different* membership, so a trainer here who is a member at some other
+    gym would match.
+    """
+    from tenancy import context
+
     return (
-        User.objects.filter(role=Role.MEMBER)
+        User.objects.filter(
+            memberships__tenant=context.require(),
+            memberships__role=Role.MEMBER,
+            memberships__is_active=True,
+        )
+        .distinct()
         .select_related("profile")
         .prefetch_related("check_ins")
         .order_by("username")
@@ -198,6 +220,35 @@ class MemberExportView(APIView):
         return response
 
 
+class AdminSetPasswordView(APIView):
+    """An admin gives a member of this gym a password.
+
+    For accounts that have none. Imported members are created without a usable
+    password, and a phone-only import has no real email to receive a reset link
+    at -- so without this, that member could never log in.
+
+    Found through `_member_queryset`, so it reaches members *here* only: an admin
+    cannot set the password of an account at another gym.
+    """
+
+    permission_classes = [IsAdmin]
+
+    def post(self, request, pk):
+        user = get_object_or_404(_member_queryset(), pk=pk)
+        password = str(request.data.get("password") or "")
+        try:
+            password_validation.validate_password(password, user)
+        except DjangoValidationError as exc:
+            return Response({"password": list(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(password)
+        user.save(update_fields=["password"])
+        # A new password ends the sessions the old one opened -- which matters
+        # when the admin is resetting an account they think someone else has.
+        revoke_refresh_tokens(user)
+        return Response({"detail": "Password set."})
+
+
 class AdminUserViewSet(ModelViewSet):
     """Admin-only account management -- create trainer/admin accounts, change
     roles, and assign a trainer to a member."""
@@ -206,8 +257,19 @@ class AdminUserViewSet(ModelViewSet):
     permission_classes = [IsAdmin]
 
     def get_queryset(self):
-        queryset = User.objects.select_related("profile").order_by("username")
+        # Only accounts that belong to this gym. `User` spans every gym on the
+        # platform, so without this an admin here could list, edit, delete or
+        # set the password of an account at a gym they have no standing in. One
+        # `filter()`, so tenant and role are matched on the same membership.
+        from tenancy import context
+
+        conditions = {"memberships__tenant": context.require(), "memberships__is_active": True}
         role = self.request.query_params.get("role")
         if role:
-            queryset = queryset.filter(role=role)
-        return queryset
+            conditions["memberships__role"] = role
+        return (
+            User.objects.filter(**conditions)
+            .distinct()
+            .select_related("profile")
+            .order_by("username")
+        )

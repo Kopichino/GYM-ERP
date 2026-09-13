@@ -10,7 +10,9 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 from accounts.models import Role, User
-from core.permissions import access, IsTrainerOrAdmin
+from core.permissions import access, IsTenantMember, IsTrainerOrAdmin
+from tenancy import context
+from tenancy.models import Membership
 
 from .models import Availability, PTSession, SessionStatus, Unavailable
 from .serializers import (
@@ -92,6 +94,32 @@ class TrainerSlotsView(APIView):
                 "date": on,
                 "results": SlotSerializer(slots, many=True).data,
             }
+        )
+
+
+class TrainerListView(APIView):
+    """The trainers a member can book at this gym.
+
+    Read off Membership rather than `User.role`: a trainer at another gym is not
+    bookable here, and neither is someone whose trainer role here has lapsed.
+    Returns a name and an id and nothing more -- all the booking form needs to
+    put the right person on a session. It replaced reading instructor profiles,
+    which were removed.
+    """
+
+    permission_classes = [IsTenantMember]
+
+    def get(self, request):
+        today = timezone.localdate()
+        memberships = Membership.objects.filter(
+            tenant=context.require(), role=Role.TRAINER, is_active=True
+        ).select_related("user")
+        trainers = sorted(
+            {m.user for m in memberships if m.is_current(today)},
+            key=lambda user: (user.get_full_name() or user.username).lower(),
+        )
+        return Response(
+            {"results": [{"id": u.id, "name": u.get_full_name() or u.username} for u in trainers]}
         )
 
 

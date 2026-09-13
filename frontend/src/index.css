@@ -210,3 +210,17 @@ body {
   background: var(--color-border);
   border-radius: 999px;
 }
+
+/*
+ * Signup's form column, centred once the screen is tall enough to hold it.
+ *
+ * Plain CSS rather than a Tailwind variant because it needs a width *and* a
+ * height condition -- and as an unlayered rule it reliably beats the
+ * `items-start pt-10` utilities it overrides, which live in a cascade layer.
+ */
+@media (min-width: 1024px) and (min-height: 880px) {
+  .auth-signup-body {
+    align-items: center;
+    padding-top: 0;
+  }
+}

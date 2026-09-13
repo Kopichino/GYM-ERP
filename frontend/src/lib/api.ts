@@ -26,11 +26,17 @@ const TENANT_SLUG = import.meta.env.VITE_TENANT_SLUG ?? "ironcore-main";
  * trainer portal showed "no members assigned to you".
  */
 const PLATFORM_ROUTES = [
-  "/auth/signup/",
+  // Not /auth/signup/: signing up is joining one particular gym, so it carries
+  // that gym's prefix like everything else. Sent unprefixed it resolved no gym,
+  // and the new account was created with standing nowhere -- it could log in
+  // and see nothing, and a referral code crashed it outright.
   "/auth/login/",
   "/auth/refresh/",
   "/auth/logout/",
   "/auth/me/",
+  // Forgetting, resetting and changing a password are about the person's
+  // account, which spans every gym they belong to.
+  "/auth/password/",
 ];
 
 function isPlatformRoute(path: string) {

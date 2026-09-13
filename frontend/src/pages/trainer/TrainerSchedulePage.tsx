@@ -56,8 +56,8 @@ export default function TrainerSchedulePage() {
         end_time: form.end_time,
         capacity: form.capacity ? Number(form.capacity) : null,
         description: form.description,
-        // The backend stamps the signed-in trainer as the instructor.
-        instructor: null,
+        // The backend stamps the signed-in trainer onto the class.
+        trainer: null,
       }),
     onSuccess: () => {
       setForm(emptyForm);

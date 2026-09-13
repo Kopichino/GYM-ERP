@@ -53,19 +53,19 @@ They can do the things that used to need a staff member:
 - Their **assigned members only** — not the whole gym
 - Log workouts on a member's behalf
 - Write workout splits and diet plans for those members
-- Run their own **classes** and manage their public instructor profile
-- See their **PT bookings** and their own **earnings** — what commission they've
-  made and what has been paid out
+- Run their own **classes**
+- See their **PT bookings**
+- Change their own password
 
 ### Admins / owners
 
 Everything else:
 
 - Members, trainers, plans, offers, day passes
-- Billing, invoices, expenses, commission
+- Billing, invoices, expenses
 - Reports: revenue, churn, occupancy, class fill, PT utilisation
 - Enquiries and the lead pipeline
-- Announcements, instructors, the photo gallery, badges
+- Announcements, the photo gallery, badges
 - Schedule and staff rota
 - Importing everything from your old gym software
 - Branding, web address, email address, website contact form
@@ -92,9 +92,8 @@ today. Nobody had to check an inbox.
 trial. When they join, one click converts the enquiry into a member — no
 re-typing.
 
-**2:00 pm** — A trainer logs a session for one of their members. The commission
-on it is calculated using the rate that applied on that day, and is added to
-their earnings.
+**2:00 pm** — A trainer logs a session for one of their members, and it shows
+up in that member's history straight away.
 
 **6:00 pm** — A member renews online by UPI. The price is decided by the server,
 not the browser. A GST invoice is generated with the next number in the
@@ -130,7 +129,6 @@ paused and expired states, and bulk import from your old system.
 | **Online checkout** | UPI or card through Razorpay |
 | **GST invoicing** | Correct, gapless numbering per financial year; CGST+SGST or IGST depending on state |
 | **Expenses** | Categorised, with a date-range summary and a breakdown chart |
-| **Trainer commission** | Rules per trainer, per plan, or gym-wide — the most specific one wins |
 | **Reports** | Revenue, monthly recurring revenue, average revenue per member, churn, class fill, PT utilisation |
 
 ### Training
@@ -140,8 +138,8 @@ diet plans built from a food catalogue, and personal training bookings.
 
 ### Classes and staff
 
-Class timetables with capacity limits, instructor profiles, and staff rotas
-with shift-overlap checking.
+Class timetables with capacity limits, each naming the trainer who runs it, and
+staff rotas with shift-overlap checking.
 
 ### Growing and keeping the gym
 
@@ -326,8 +324,10 @@ with currency symbols and thousands separators, and translates status words
 Because that detection is a *guess*, nothing is written until you have seen it
 and approved it.
 
-Imported accounts are created without a working password, so nobody can log into
-them until a password is set.
+Imported accounts are created without a working password. A member sets their
+first one with **Forgot password** on the login page, or an admin sets one for
+them from the Members page — the only way in for someone imported with a phone
+number and no email.
 
 ---
 
@@ -434,6 +434,11 @@ membership at both.
 **Is the leaderboard compulsory?**
 No. It's opt-in, and opting out still lets you see your own standing privately
 without appearing to anyone else.
+
+**What if someone forgets their password?**
+They use **Forgot password** on the login page and get a link by email. It works
+once, expires after a day, and signs them out everywhere else once used. For a
+member with no email on file, an admin sets a new password from Members.
 
 **Who owns the data?**
 Each gym's data belongs to that gym and is isolated from every other gym.

@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { NavLink } from "react-router-dom";
-import { ADMIN_GROUPS, type AdminLink } from "./adminNav";
+import type { PortalGroup, PortalLink } from "./navShared";
 import { railColor } from "../../lib/theme";
 
 function Icon({ path, className = "" }: { path: string; className?: string }) {
@@ -28,7 +28,7 @@ function Item({
   badgeTone,
   onNavigate,
 }: {
-  link: AdminLink;
+  link: PortalLink;
   colour: string;
   collapsed: boolean;
   badge?: number;
@@ -88,17 +88,19 @@ export interface NavBadge {
 }
 
 function Nav({
+  groups,
   collapsed,
   badges,
   onNavigate,
 }: {
+  groups: PortalGroup[];
   collapsed: boolean;
   badges: Record<string, NavBadge>;
   onNavigate?: () => void;
 }) {
   return (
     <nav className="flex flex-col gap-4">
-      {ADMIN_GROUPS.map((group, groupIndex) => (
+      {groups.map((group, groupIndex) => (
         <div key={group.name}>
           {collapsed ? (
             // A rule instead of a heading: the grouping still reads, without a
@@ -118,7 +120,7 @@ function Nav({
                 link={link}
                 colour={railColor(groupIndex)}
                 collapsed={collapsed}
-                // Badges follow the admin around the portal rather than
+                // Badges follow you around the portal rather than
                 // living on the page they refer to -- a warning you have to go
                 // looking for is not a warning.
                 badge={badges[link.to]?.count}
@@ -134,22 +136,28 @@ function Nav({
 }
 
 /**
- * The admin portal's navigation.
+ * A portal's navigation -- admin, member or trainer, each fed its own groups.
  *
  * A column rather than a strip because vertical space is the cheap axis here:
- * all nineteen destinations fit at once, grouped, with no scrolling. The
- * collapse toggle trades the labels for page width and is remembered, so it
- * stays collapsed for someone who works in the wide tables all day -- but
- * nothing is hidden behind a click by default.
+ * every destination fits at once, grouped, with no scrolling. The collapse
+ * toggle trades the labels for page width and is remembered, so it stays
+ * collapsed for someone who works in wide tables all day -- but nothing is
+ * hidden behind a click by default.
+ *
+ * Member and trainer used to get a single scrolling tab strip across the top,
+ * which hid half their pages off the right edge and grouped nothing. All three
+ * portals are now navigated the same way.
  */
-export function AdminSidebarDesktop({
+export function SidebarDesktop({
+  groups,
   collapsed,
   onToggle,
-  badges,
+  badges = {},
 }: {
+  groups: PortalGroup[];
   collapsed: boolean;
   onToggle: () => void;
-  badges: Record<string, NavBadge>;
+  badges?: Record<string, NavBadge>;
 }) {
   return (
     <aside
@@ -199,7 +207,7 @@ export function AdminSidebarDesktop({
             </svg>
           )}
         </button>
-        <Nav collapsed={collapsed} badges={badges} />
+        <Nav groups={groups} collapsed={collapsed} badges={badges} />
       </div>
     </aside>
   );
@@ -207,14 +215,16 @@ export function AdminSidebarDesktop({
 
 /** Below `lg` the same nav slides in over the page -- which is where a
  *  hamburger genuinely earns its keep. */
-export function AdminSidebarDrawer({
+export function SidebarDrawer({
+  groups,
   open,
   onClose,
-  badges,
+  badges = {},
 }: {
+  groups: PortalGroup[];
   open: boolean;
   onClose: () => void;
-  badges: Record<string, NavBadge>;
+  badges?: Record<string, NavBadge>;
 }) {
   return (
     <AnimatePresence>
@@ -240,7 +250,7 @@ export function AdminSidebarDrawer({
               </span>
               <button
                 onClick={onClose}
-                aria-label="Close admin menu"
+                aria-label="Close menu"
                 className="rounded-md p-1 text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
               >
                 <svg
@@ -258,7 +268,7 @@ export function AdminSidebarDrawer({
             </div>
             {/* Closing on pick: leaving it open over the page you just asked
                 for is the classic drawer annoyance. */}
-            <Nav collapsed={false} badges={badges} onNavigate={onClose} />
+            <Nav groups={groups} collapsed={false} badges={badges} onNavigate={onClose} />
           </motion.div>
         </>
       )}

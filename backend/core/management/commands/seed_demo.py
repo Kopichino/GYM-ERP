@@ -51,7 +51,6 @@ from bodystats.models import BodyMeasurement, GoalStatus, GoalType, MemberGoal
 from devices.models import Device, DeviceKind, generate_key
 from devices.services import record_punch
 from gallery.models import GalleryPost, MediaType
-from instructors.models import Instructor
 from schedule_app.models import ClassSession
 from schedule_app.services import book
 from feedback.models import Survey, SurveyResponse, Trigger
@@ -220,8 +219,6 @@ class Command(BaseCommand):
         Enquiry.objects.filter(created_by__in=demo_users).delete()
         ClassSession.objects.filter(title__startswith="[demo] ").delete()
         Announcement.objects.filter(title__startswith="[demo] ").delete()
-        Instructor.objects.filter(user__in=demo_users).delete()
-        Instructor.objects.filter(name__startswith="[demo] ").delete()
         GalleryPost.objects.filter(uploader__in=demo_users).delete()
         # Payments cascade from the member; plans are shared so only demo ones go.
         demo_users.delete()
@@ -322,28 +319,9 @@ class Command(BaseCommand):
         trainers = []
         for handle, first, last, specialty, bio in specs:
             user = self._account(handle, first, last, Role.TRAINER, phone="+91 98200 20000")
-            instructor, _ = Instructor.objects.update_or_create(
-                user=user,
-                defaults={
-                    "name": f"{first} {last}",
-                    "specialty": specialty,
-                    "bio": bio,
-                    "active": True,
-                },
-            )
-            if not instructor.photo:
-                instructor.photo.save(f"{handle}.png", png((36, 36, 48)), save=True)
-            trainers.append((user, instructor))
-
-        # A guest instructor with no login, to show that the two are separable.
-        Instructor.objects.update_or_create(
-            name="[demo] Sana Kapoor",
-            defaults={
-                "specialty": "Guest -- Spin",
-                "bio": "Visiting instructor. Content-only profile with no login account.",
-                "active": True,
-            },
-        )
+            # (user, specialty): the specialty is only used in the summary printed
+            # at the end -- there is no instructor profile to hold it any more.
+            trainers.append((user, specialty))
         return trainers
 
     def _members(self, trainers):
@@ -902,21 +880,21 @@ class Command(BaseCommand):
             )
 
     def _classes(self, trainers):
-        ravi_profile, meera_profile = trainers[0][1], trainers[1][1]
+        ravi, meera = trainers[0][0], trainers[1][0]
         specs = [
-            ("[demo] Morning HIIT", ravi_profile, 1, time(7, 0), time(8, 0), 12),
-            ("[demo] Strength Basics", ravi_profile, 2, time(18, 30), time(19, 30), 8),
-            ("[demo] Sunrise Yoga", meera_profile, 2, time(6, 30), time(7, 30), None),
-            ("[demo] Mobility Clinic", meera_profile, 4, time(19, 0), time(20, 0), 2),
-            ("[demo] Saturday Circuit", ravi_profile, 6, time(9, 0), time(10, 0), 15),
-            ("[demo] Last week's HIIT", ravi_profile, -5, time(7, 0), time(8, 0), 12),
+            ("[demo] Morning HIIT", ravi, 1, time(7, 0), time(8, 0), 12),
+            ("[demo] Strength Basics", ravi, 2, time(18, 30), time(19, 30), 8),
+            ("[demo] Sunrise Yoga", meera, 2, time(6, 30), time(7, 30), None),
+            ("[demo] Mobility Clinic", meera, 4, time(19, 0), time(20, 0), 2),
+            ("[demo] Saturday Circuit", ravi, 6, time(9, 0), time(10, 0), 15),
+            ("[demo] Last week's HIIT", ravi, -5, time(7, 0), time(8, 0), 12),
         ]
         classes = {}
-        for title, instructor, offset, start, end, capacity in specs:
+        for title, trainer, offset, start, end, capacity in specs:
             session, _ = ClassSession.objects.update_or_create(
                 title=title,
                 defaults={
-                    "instructor": instructor,
+                    "trainer": trainer,
                     "date": TODAY + timedelta(days=offset),
                     "start_time": start,
                     "end_time": end,
@@ -1341,10 +1319,10 @@ class Command(BaseCommand):
         out.write("")
 
         out.write(self.style.MIGRATE_HEADING("  TRAINERS"))
-        for user, instructor in trainers:
+        for user, specialty in trainers:
             roster = user.assigned_members.count()
             out.write(
-                f"    {user.username:<20}{user.get_full_name()} -- {instructor.specialty}, "
+                f"    {user.username:<20}{user.get_full_name()} -- {specialty}, "
                 f"{roster} assigned member(s)"
             )
         out.write("")

@@ -15,7 +15,6 @@ from django.db import transaction
 from accounts.models import MembershipStatus, MemberProfile, Role, User
 from billing.models import PaymentMethod, PaymentStatus, Plan
 from billing.services import record_payment
-from instructors.models import Instructor
 
 from .mapping import BILLING, MEMBER, REQUIRED, TRAINER, detect_columns
 
@@ -173,6 +172,18 @@ def to_decimal(value):
         return Decimal(cleaned)
     except InvalidOperation:
         return None
+
+
+def _enrol(user, role):
+    """Give an imported account standing at the gym doing the import.
+
+    Access is read off Membership. Without this, an imported member who later
+    sets a password would log in to find nothing there at all.
+    """
+    from tenancy import context
+    from tenancy.models import Membership
+
+    Membership.objects.get_or_create(user=user, tenant=context.require(), role=role)
 
 
 def _unique_username(base):
@@ -336,7 +347,13 @@ def _build_trainer(row, mapping, seen_emails):
     if email:
         seen_emails.add(email)
 
-    existing = Instructor.objects.filter(name__iexact=name).first() if name else None
+    if not to_text(values.get("email")):
+        # A trainer only exists as an account now, and an account needs an
+        # email -- so this row is refused and reported rather than committed to
+        # nothing.
+        errors.append("A trainer needs an email address to get an account.")
+
+    existing = User.objects.filter(email__iexact=email).first() if email else None
 
     return {
         "action": "update" if existing else "create",
@@ -398,6 +415,7 @@ def _commit_member(data, _actor):
         # phone-only export still imports.
         user.email = f"{user.username}@imported.local"
     user.save()
+    _enrol(user, Role.MEMBER)
 
     profile, _ = MemberProfile.objects.get_or_create(user=user)
     for field in ("phone", "emergency_contact_name", "emergency_contact_phone"):
@@ -456,35 +474,27 @@ def _commit_billing(data, actor):
 
 
 def _commit_trainer(data, _actor):
-    instructor = Instructor.objects.filter(name__iexact=data["name"]).first()
-    is_new = instructor is None
+    # A trainer is an account at this gym. There is no separate profile to fall
+    # back on any more, so `_build_trainer` refuses rows without an email rather
+    # than letting them reach here and become nothing.
+    user = User.objects.filter(email__iexact=data["email"]).first()
+    is_new = user is None
     if is_new:
-        instructor = Instructor(name=data["name"])
+        username = data["username"] or data["email"].split("@")[0] or data["name"]
+        user = User(
+            username=_unique_username(username),
+            email=data["email"],
+            role=Role.TRAINER,
+        )
+        parts = data["name"].split()
+        user.first_name = parts[0] if parts else ""
+        user.last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+        user.set_unusable_password()
+        user.save()
+    elif user.role == Role.MEMBER:
+        user.role = Role.TRAINER
+        user.save(update_fields=["role", "is_staff"])
 
-    instructor.specialty = data["specialty"] or instructor.specialty
-    instructor.bio = data["bio"] or instructor.bio
-
-    # A trainer with an email gets a login account so they can reach the
-    # trainer portal; without one they stay a content-only profile.
-    if data["email"]:
-        user = User.objects.filter(email__iexact=data["email"]).first()
-        if user is None:
-            username = data["username"] or data["email"].split("@")[0] or data["name"]
-            user = User(
-                username=_unique_username(username),
-                email=data["email"],
-                role=Role.TRAINER,
-            )
-            parts = data["name"].split()
-            user.first_name = parts[0] if parts else ""
-            user.last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
-            user.set_unusable_password()
-            user.save()
-            MemberProfile.objects.get_or_create(user=user)
-        elif user.role == Role.MEMBER:
-            user.role = Role.TRAINER
-            user.save(update_fields=["role", "is_staff"])
-        instructor.user = user
-
-    instructor.save()
+    MemberProfile.objects.get_or_create(user=user)
+    _enrol(user, Role.TRAINER)
     return is_new

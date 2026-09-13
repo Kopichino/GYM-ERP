@@ -1,12 +1,75 @@
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { fetchAtRisk, type AtRiskMember, type RiskBand } from "../api/crm";
-import { Button, Card, EmptyState, ErrorState, LoadingState } from "./ui";
+import { Button, Card, EmptyState, ErrorState, ghostButtonClass, LoadingState } from "./ui";
 
 const BAND_COLOUR: Record<RiskBand, string> = {
   quiet: "#ff3d5a",
   cooling: "#ffb020",
 };
+
+/**
+ * Reveals the number rather than trying to dial it.
+ *
+ * This was a bare `tel:` link, and a `tel:` link on a desktop browser with no
+ * calling app does nothing at all -- which is exactly where the front desk
+ * works this list. Showing the number lets them dial it on whatever phone is
+ * in their hand. The revealed number stays a `tel:` link, so on a phone it
+ * still dials in one tap.
+ *
+ * A member with no number on file says so, rather than simply having no
+ * button -- a missing button reads as a broken page, not as missing data.
+ */
+function CallAction({ member }: { member: AtRiskMember }) {
+  const [shown, setShown] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const name = member.full_name || member.username;
+
+  if (!member.phone) {
+    return (
+      <span className="shrink-0 text-xs text-[var(--color-text-muted)] opacity-70">
+        No phone on file
+      </span>
+    );
+  }
+
+  if (!shown) {
+    return (
+      <button
+        type="button"
+        onClick={() => setShown(true)}
+        className={`shrink-0 ${ghostButtonClass}`}
+        aria-label={`Show ${name}'s phone number`}
+      >
+        Call
+      </button>
+    );
+  }
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(member.phone);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Blocked in some contexts. The number is on screen and selectable.
+    }
+  }
+
+  return (
+    <span className="flex shrink-0 items-center gap-2">
+      <a
+        href={`tel:${member.phone.replace(/\s/g, "")}`}
+        className="font-semibold tabular-nums text-[var(--color-text)] transition-colors hover:text-[var(--color-accent)]"
+      >
+        {member.phone}
+      </a>
+      <button type="button" onClick={copy} className={ghostButtonClass}>
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </span>
+  );
+}
 
 function Row({ member }: { member: AtRiskMember }) {
   const colour = BAND_COLOUR[member.band];
@@ -51,14 +114,7 @@ function Row({ member }: { member: AtRiskMember }) {
             </span>
           )}
         </span>
-        {member.phone && (
-          <a
-            href={`tel:${member.phone.replace(/\s/g, "")}`}
-            className="shrink-0 text-xs text-[var(--color-text-muted)] transition-colors hover:text-[var(--color-accent)]"
-          >
-            Call
-          </a>
-        )}
+        <CallAction member={member} />
       </span>
     </li>
   );

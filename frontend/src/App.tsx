@@ -8,10 +8,11 @@ import AnnouncementsPage from "./pages/AnnouncementsPage";
 import BillingPage from "./pages/BillingPage";
 import DashboardPage from "./pages/DashboardPage";
 import ExercisesPage from "./pages/ExercisesPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import GalleryPage from "./pages/GalleryPage";
-import InstructorsPage from "./pages/InstructorsPage";
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import SchedulePage from "./pages/SchedulePage";
 import SignupPage from "./pages/SignupPage";
 import WorkoutsPage from "./pages/WorkoutsPage";
@@ -37,7 +38,6 @@ const AdminEnquiriesPage = lazy(() => import("./pages/admin/AdminEnquiriesPage")
 const AdminImportPage = lazy(() => import("./pages/admin/AdminImportPage"));
 const AdminDevicesPage = lazy(() => import("./pages/admin/AdminDevicesPage"));
 const AdminAnnouncementsPage = lazy(() => import("./pages/admin/AdminAnnouncementsPage"));
-const AdminInstructorsPage = lazy(() => import("./pages/admin/AdminInstructorsPage"));
 const AdminSchedulePage = lazy(() => import("./pages/admin/AdminSchedulePage"));
 const AdminGalleryPage = lazy(() => import("./pages/admin/AdminGalleryPage"));
 const AdminBillingPage = lazy(() => import("./pages/admin/AdminBillingPage"));
@@ -83,13 +83,14 @@ export default function App() {
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           {/* Shared gym content -- any signed-in role can read these. */}
           <Route path="/exercises" element={<ExercisesPage />} />
           <Route path="/announcements" element={<AnnouncementsPage />} />
-          <Route path="/instructors" element={<InstructorsPage />} />
           <Route path="/schedule" element={<SchedulePage />} />
           <Route path="/gallery" element={<GalleryPage />} />
           {/* Where a scanned front-desk QR lands. Any role can record a
@@ -132,7 +133,6 @@ export default function App() {
               <Route path="import" element={<AdminImportPage />} />
               <Route path="devices" element={<AdminDevicesPage />} />
               <Route path="announcements" element={<AdminAnnouncementsPage />} />
-              <Route path="instructors" element={<AdminInstructorsPage />} />
               <Route path="schedule" element={<AdminSchedulePage />} />
               <Route path="gallery" element={<AdminGalleryPage />} />
               <Route path="billing" element={<AdminBillingPage />} />

@@ -19,7 +19,6 @@ urlpatterns = admin_patterns + [
     path("api/attendance/", include("attendance.urls")),
     path("api/workouts/", include("workouts.urls")),
     path("api/announcements/", include("announcements.urls")),
-    path("api/instructors/", include("instructors.urls")),
     path("api/schedule/", include("schedule_app.urls")),
     path("api/gallery/", include("gallery.urls")),
     path("api/billing/", include("billing.urls")),

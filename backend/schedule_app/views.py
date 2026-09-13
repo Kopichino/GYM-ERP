@@ -32,7 +32,7 @@ def _id_list(data, key):
 
 class CanManageClass(BasePermission):
     """Anyone authenticated may read the schedule. Admins may edit any class;
-    a trainer may edit only classes assigned to their own instructor profile."""
+    a trainer may edit only the classes they run."""
 
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:
@@ -46,8 +46,7 @@ class CanManageClass(BasePermission):
     def has_object_permission(self, request, view, obj):
         if request.method in SAFE_METHODS or access(request).is_admin:
             return True
-        profile = getattr(request.user, "instructor_profile", None)
-        return profile is not None and obj.instructor_id == profile.id
+        return obj.trainer_id == request.user.id
 
 
 class ClassSessionViewSet(ModelViewSet):
@@ -58,8 +57,7 @@ class ClassSessionViewSet(ModelViewSet):
         user = self.request.user
         if access(self.request).is_admin:
             return True
-        profile = getattr(user, "instructor_profile", None)
-        return profile is not None and session.instructor_id == profile.id
+        return session.trainer_id == user.id
 
     @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
     def book(self, request, pk=None):
@@ -114,18 +112,14 @@ class ClassSessionViewSet(ModelViewSet):
         queryset = ClassSession.objects.all().order_by("date", "start_time")
         # The trainer portal asks for `?mine=1` to get just its own classes.
         if self.request.query_params.get("mine") and access(self.request).is_trainer:
-            profile = getattr(self.request.user, "instructor_profile", None)
-            return queryset.filter(instructor=profile) if profile else queryset.none()
+            return queryset.filter(trainer=self.request.user)
         return queryset
 
     def perform_create(self, serializer):
         user = self.request.user
         if access(self.request).is_trainer:
-            profile = getattr(user, "instructor_profile", None)
-            if profile is None:
-                raise PermissionDenied("No instructor profile linked to this account.")
             # A trainer can only put their own name on a class.
-            serializer.save(instructor=profile)
+            serializer.save(trainer=user)
             return
         serializer.save()
 
@@ -140,6 +134,6 @@ class MyBookingsView(ListAPIView):
         return (
             ClassBooking.objects.filter(member=self.request.user)
             .exclude(status=BookingStatus.CANCELLED)
-            .select_related("session", "session__instructor", "member")
+            .select_related("session", "session__trainer", "member")
             .order_by("session__date", "session__start_time")
         )

@@ -11,7 +11,7 @@ const features = [
   { title: "Exercise library", copy: "Browse every muscle group and region, with form tutorials one tap away." },
   { title: "Community gallery", copy: "Share your gym moments with photos and videos." },
   { title: "Live announcements", copy: "Never miss a gym update or class change again." },
-  { title: "Class schedule", copy: "See upcoming sessions and the instructors running them." },
+  { title: "Class schedule", copy: "See upcoming sessions and the trainers running them." },
   { title: "Consistency streaks", copy: "See your check-in streak build day by day, session by session." },
 ];
 

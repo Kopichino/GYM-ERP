@@ -56,6 +56,12 @@ class AdminMemberEndpointsTests(TenantAPIMixin, APITestCase):
         self.member = User.objects.create_user(
             username="member", email="m@example.com", password="pass12345"
         )
+        # Made in setUp, after the mixin has already enrolled everyone, so none
+        # of these is anybody at this gym until enrolled here. The member list
+        # is scoped to members of this gym, and an unenrolled one is correctly
+        # not on it.
+        for user in (self.admin, self.trainer, self.member):
+            self.member_for(user, user.role)
 
     def test_member_list_requires_admin(self):
         for user in (self.member, self.trainer):

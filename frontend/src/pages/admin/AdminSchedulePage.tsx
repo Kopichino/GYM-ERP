@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { fetchInstructors } from "../../api/instructors";
+import { fetchUsers } from "../../api/users";
 import { createClassSession, deleteClassSession, fetchClassSessions } from "../../api/schedule";
 import { Button, Card, EmptyState, ErrorState, Input, LoadingState, Select } from "../../components/ui";
 import { railColor } from "../../lib/theme";
@@ -12,11 +12,15 @@ export default function AdminSchedulePage() {
     queryKey: ["schedule"],
     queryFn: () => fetchClassSessions(),
   });
-  const { data: instructors } = useQuery({ queryKey: ["instructors"], queryFn: fetchInstructors });
+  // Classes are run by a trainer at this gym, so the picker lists trainers.
+  const { data: trainers } = useQuery({
+    queryKey: ["users", "trainer"],
+    queryFn: () => fetchUsers("trainer"),
+  });
 
   const [form, setForm] = useState({
     title: "",
-    instructor: "",
+    trainer: "",
     date: "",
     start_time: "",
     end_time: "",
@@ -28,7 +32,7 @@ export default function AdminSchedulePage() {
     mutationFn: () =>
       createClassSession({
         title: form.title,
-        instructor: form.instructor ? Number(form.instructor) : null,
+        trainer: form.trainer ? Number(form.trainer) : null,
         date: form.date,
         start_time: form.start_time,
         end_time: form.end_time,
@@ -37,7 +41,7 @@ export default function AdminSchedulePage() {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["schedule"] });
-      setForm({ title: "", instructor: "", date: "", start_time: "", end_time: "", capacity: "", description: "" });
+      setForm({ title: "", trainer: "", date: "", start_time: "", end_time: "", capacity: "", description: "" });
     },
   });
 
@@ -66,13 +70,13 @@ export default function AdminSchedulePage() {
             required
           />
           <Select
-            value={form.instructor}
-            onChange={(e) => setForm((f) => ({ ...f, instructor: e.target.value }))}
+            value={form.trainer}
+            onChange={(e) => setForm((f) => ({ ...f, trainer: e.target.value }))}
           >
-            <option value="">No instructor</option>
-            {instructors?.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name}
+            <option value="">No trainer</option>
+            {trainers?.map((t) => (
+              <option key={t.id} value={t.id}>
+                {`${t.first_name} ${t.last_name}`.trim() || t.username}
               </option>
             ))}
           </Select>

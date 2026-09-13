@@ -1,11 +1,30 @@
 from rest_framework import serializers
 
+from accounts.models import Role
+from tenancy import context
+from tenancy.models import Membership
+
 from .models import BookingStatus, ClassBooking, ClassSession
 from .services import booked_count, spots_left
 
 
+class UserNameField(serializers.RelatedField):
+    """An account shown as a person's name, falling back to their username.
+
+    Read-only. None when there is no account -- a class nobody in particular
+    runs has no trainer to name.
+    """
+
+    def __init__(self, **kwargs):
+        kwargs["read_only"] = True
+        super().__init__(**kwargs)
+
+    def to_representation(self, user):
+        return user.get_full_name() or user.username
+
+
 class ClassSessionSerializer(serializers.ModelSerializer):
-    instructor_name = serializers.CharField(source="instructor.name", read_only=True, default=None)
+    trainer_name = UserNameField(source="trainer")
     booked_count = serializers.SerializerMethodField()
     spots_left = serializers.SerializerMethodField()
     my_status = serializers.SerializerMethodField()
@@ -15,8 +34,8 @@ class ClassSessionSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "title",
-            "instructor",
-            "instructor_name",
+            "trainer",
+            "trainer_name",
             "date",
             "start_time",
             "end_time",
@@ -26,6 +45,22 @@ class ClassSessionSerializer(serializers.ModelSerializer):
             "spots_left",
             "my_status",
         ]
+
+    def validate_trainer(self, trainer):
+        """Only someone who trains at this gym can run one of its classes.
+
+        The field would otherwise take any account id -- a member here, or a
+        trainer at a different gym, whose name would then appear on this gym's
+        timetable.
+        """
+        if trainer is None:
+            return trainer
+        trains_here = Membership.objects.filter(
+            user=trainer, tenant=context.require(), role=Role.TRAINER, is_active=True
+        ).exists()
+        if not trains_here:
+            raise serializers.ValidationError("That person is not a trainer at this gym.")
+        return trainer
 
     def get_booked_count(self, obj):
         return booked_count(obj)
@@ -53,9 +88,7 @@ class ClassBookingSerializer(serializers.ModelSerializer):
     date = serializers.DateField(source="session.date", read_only=True)
     start_time = serializers.TimeField(source="session.start_time", read_only=True)
     end_time = serializers.TimeField(source="session.end_time", read_only=True)
-    instructor_name = serializers.CharField(
-        source="session.instructor.name", read_only=True, default=None
-    )
+    trainer_name = UserNameField(source="session.trainer")
 
     class Meta:
         model = ClassBooking
@@ -68,7 +101,7 @@ class ClassBookingSerializer(serializers.ModelSerializer):
             "date",
             "start_time",
             "end_time",
-            "instructor_name",
+            "trainer_name",
             "status",
             "position",
             "booked_at",

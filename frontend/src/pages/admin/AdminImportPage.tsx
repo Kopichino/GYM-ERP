@@ -25,7 +25,7 @@ import { railColor } from "../../lib/theme";
 const KINDS: { value: ImportKind; label: string; hint: string }[] = [
   { value: "members", label: "Members", hint: "Names, emails, phones, join dates, membership status." },
   { value: "billing", label: "Billing / Payments", hint: "Payments per member. Import members first so rows can be matched." },
-  { value: "trainers", label: "Trainers", hint: "Trainer profiles. Rows with an email also get a trainer login." },
+  { value: "trainers", label: "Trainers", hint: "Trainer accounts. Every row needs an email, which becomes their login." },
 ];
 
 function fieldLabel(field: string) {
@@ -161,6 +161,16 @@ export default function AdminImportPage() {
             <Stat label="Updated" value={result.updated} />
             <Stat label="Skipped" value={result.skipped} />
           </div>
+          {kind !== "billing" && result.created > 0 && (
+            // Said here, at the moment the accounts are made: they have no
+            // password, and an admin who tells members to "just log in" is
+            // otherwise sending them into a dead end.
+            <p className="mt-4 max-w-prose text-sm text-[var(--color-text-muted)]">
+              The new accounts have no password yet. They can set one with{" "}
+              <b className="text-[var(--color-text)]">Forgot password</b> on the login page, or you
+              can set one for a member from <b className="text-[var(--color-text)]">Members</b>.
+            </p>
+          )}
           {result.problems.length > 0 && (
             <div className="mt-4 border-t border-[var(--color-border)] pt-3">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
