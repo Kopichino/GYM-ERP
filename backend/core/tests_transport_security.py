@@ -11,7 +11,7 @@ that exact mismatch. It is now derived rather than asserted, so the two cannot
 drift apart again.
 """
 
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 
 from gymerp import settings as project_settings
 
@@ -104,3 +104,34 @@ class ThrottleStateCheckTests(SimpleTestCase):
     def test_the_hint_says_what_to_do(self):
         # A warning that does not name the fix gets silenced rather than acted on.
         self.assertIn("REDIS_URL", self._run_check()[0].hint)
+
+
+class HttpsRedirectTests(TestCase):
+    """The redirect itself, pinned where the runner cannot hide it.
+
+    `core.test_runner` stands `SECURE_SSL_REDIRECT` down for the test run, or
+    the test client's plain-HTTP requests would all be answered 301 before
+    reaching a view -- which is what the whole suite did under CI's DEBUG=False.
+    Turning it back on here proves the production control still works, and that
+    the runner is the only reason the rest of the suite gets through.
+
+    `/api/attendance/current/` is a signed-in endpoint, so an anonymous request
+    reaching the view layer is a 401. That distinguishes "the redirect is off"
+    from "the request never arrived".
+    """
+
+    PATH = "/api/attendance/current/"
+
+    @override_settings(SECURE_SSL_REDIRECT=True)
+    def test_plain_http_is_redirected_to_https_when_the_setting_is_on(self):
+        response = self.client.get(self.PATH)
+        self.assertEqual(response.status_code, 301)
+        self.assertEqual(response["Location"], f"https://testserver{self.PATH}")
+
+    def test_the_runner_leaves_the_test_client_alone(self):
+        # The same request, with the setting as the runner leaves it.
+        self.assertEqual(self.client.get(self.PATH).status_code, 401)
+
+    @override_settings(SECURE_SSL_REDIRECT=True)
+    def test_a_request_that_arrives_over_https_is_not_redirected(self):
+        self.assertEqual(self.client.get(self.PATH, secure=True).status_code, 401)

@@ -395,6 +395,12 @@ else:
 # exists to prevent. core/tests_transport_security.py holds the real invariant.
 SILENCED_SYSTEM_CHECKS = ["security.W021"]
 
+# The suite runs with DEBUG off, which turns SECURE_SSL_REDIRECT on -- and the
+# test client speaks HTTP, so every request would be answered 301 before it
+# reached a view. The runner stands that redirect down for the run only; the
+# production setting above is untouched. See core/test_runner.py.
+TEST_RUNNER = "core.test_runner.SecurityAwareTestRunner"
+
 # --- Error monitoring (free tier, optional) -----------------------------
 
 # --- Gym identity, printed on GST invoices -----------------------------
