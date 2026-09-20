@@ -21,6 +21,7 @@ import {
   tableHeadRowClass,
   tableRowClass,
 } from "../../components/ui";
+import MfaResetCell from "../../components/MfaResetCell";
 import { fadeUp, staggerContainer } from "../../lib/motion";
 import { statusColor, tint } from "../../lib/theme";
 
@@ -162,6 +163,7 @@ export default function AdminMembersPage() {
                 <th className={tableHeadCellClass}>Joined</th>
                 <th className={tableHeadCellClass}>Last check-in</th>
                 <th className={tableHeadCellClass}>Password</th>
+                <th className={tableHeadCellClass}>Two-step sign-in</th>
               </tr>
             </thead>
             <motion.tbody initial="hidden" animate="visible" variants={staggerContainer(0.03)}>
@@ -177,6 +179,13 @@ export default function AdminMembersPage() {
                   </td>
                   <td className={tableCellClass}>
                     <PasswordCell member={m} />
+                  </td>
+                  <td className={tableCellClass}>
+                    <MfaResetCell
+                      userId={m.id}
+                      name={`${m.first_name} ${m.last_name}`.trim() || m.username}
+                      hasMfa={m.has_mfa}
+                    />
                   </td>
                 </motion.tr>
               ))}

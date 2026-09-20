@@ -1,13 +1,13 @@
 from django.shortcuts import get_object_or_404
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 from accounts.models import User
-from core.permissions import access
+from core.permissions import access, IsTenantMember
 from core.scoping import may_write_for, visible_rows
+from tenancy.people import people_here_or_404
 
 from .models import BodyMeasurement, MemberGoal
 from .serializers import BodyMeasurementSerializer, MemberGoalSerializer
@@ -18,14 +18,17 @@ class _MemberScopedViewSet(ModelViewSet):
     """Rows belong to a member. Without `?member=` you get your own; with it you
     get that member's, but only if you're their trainer or an admin."""
 
-    permission_classes = [IsAuthenticated]
+    # Standing at the gym in the URL, not just a signed-in account: without it a
+    # person from another gym could read this gym's (empty) list for them and
+    # file new rows under a gym they do not belong to.
+    permission_classes = [IsTenantMember]
     model = None
 
     def _target_member(self):
         member_id = self.request.query_params.get("member") or self.request.data.get("user")
         if not member_id or str(member_id) == str(self.request.user.id):
             return self.request.user
-        member = get_object_or_404(User, pk=member_id)
+        member = people_here_or_404(member_id)
         if not may_write_for(access(self.request), member):
             raise PermissionDenied("Not one of your members.")
         return member
@@ -79,13 +82,16 @@ class BodyStatsSummaryView(APIView):
     """Latest weight, height, BMI and its band, plus movement since the last
     weigh-in and since the very first one."""
 
-    permission_classes = [IsAuthenticated]
+    # Standing at the gym in the URL, not just a signed-in account: without it a
+    # person from another gym could read this gym's (empty) list for them and
+    # file new rows under a gym they do not belong to.
+    permission_classes = [IsTenantMember]
 
     def get(self, request, *args, **kwargs):
         member_id = request.query_params.get("member")
         member = request.user
         if member_id and str(member_id) != str(request.user.id):
-            member = get_object_or_404(User, pk=member_id)
+            member = people_here_or_404(member_id)
             if not may_write_for(access(request), member):
                 raise PermissionDenied("Not one of your members.")
         return Response(summary_for(member))

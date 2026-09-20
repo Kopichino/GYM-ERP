@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { fetchMembers } from "../api/admin";
-import { commitCheckout, fetchPlans, quoteCheckout, type CheckoutQuote } from "../api/billing";
+import { personLabel } from "../lib/people";
+import { commitCheckout, fetchSellablePlans, quoteCheckout, type CheckoutQuote } from "../api/billing";
 import { Button, Card, ErrorText, Input, Select } from "./ui";
 import { railColor } from "../lib/theme";
 
@@ -12,6 +13,23 @@ const METHODS = [
   { value: "bank_transfer", label: "Bank transfer" },
   { value: "other", label: "Other" },
 ];
+
+type ApiError = { response?: { data?: Record<string, unknown> } } | null;
+
+/** The server's reason, whether it came as `detail` or on a field such as `plan`. */
+function reason(err: unknown, fallback: string) {
+  const data = (err as ApiError)?.response?.data;
+  if (!data) return fallback;
+  const value = data.detail ?? Object.values(data)[0];
+  const message = Array.isArray(value) ? value[0] : value;
+  return typeof message === "string" && message ? message : fallback;
+}
+
+/** Whether the server turned the sale away because of the plan -- retired since
+ *  the picker was loaded, most likely. */
+function refusedPlan(err: unknown) {
+  return Boolean((err as ApiError)?.response?.data?.plan);
+}
 
 function Line({ label, value, muted, strong }: { label: string; value: string; muted?: boolean; strong?: boolean }) {
   return (
@@ -55,10 +73,26 @@ export default function CheckoutPanel() {
   const [done, setDone] = useState("");
 
   const { data: members } = useQuery({ queryKey: ["admin", "members"], queryFn: fetchMembers });
-  const { data: plans } = useQuery({ queryKey: ["plans"], queryFn: fetchPlans });
-  const activePlans = plans?.filter((p) => p.is_active) ?? [];
+  // The server decides what is on sale. Re-read whenever the till opens, so a
+  // plan retired a moment ago -- on this screen or another admin's -- is gone.
+  const { data: plans } = useQuery({
+    queryKey: ["plans", "sellable"],
+    queryFn: fetchSellablePlans,
+    staleTime: 0,
+  });
 
   const ready = member !== "" && plan !== "";
+
+  /** A refusal about the plan means the picker is out of date: drop the choice
+   *  and reload what is on sale, keeping the message on screen. */
+  function showRefusal(err: unknown, fallback: string) {
+    setQuote(null);
+    setError(reason(err, fallback));
+    if (refusedPlan(err)) {
+      setPlan("");
+      queryClient.invalidateQueries({ queryKey: ["plans"] });
+    }
+  }
 
   const priceIt = useMutation({
     mutationFn: () =>
@@ -72,10 +106,7 @@ export default function CheckoutPanel() {
       setQuote(data);
       setError("");
     },
-    onError: (err: { response?: { data?: { detail?: string } } }) => {
-      setQuote(null);
-      setError(err.response?.data?.detail ?? "Could not price that sale.");
-    },
+    onError: (err) => showRefusal(err, "Could not price that sale."),
   });
 
   // Re-price whenever the sale changes. Without this the operator could edit
@@ -109,9 +140,10 @@ export default function CheckoutPanel() {
       setMember("");
       setPlan("");
       queryClient.invalidateQueries({ queryKey: ["admin"] });
+      // The payments ledger and the members' billing rows show this sale too.
+      queryClient.invalidateQueries({ queryKey: ["billing"] });
     },
-    onError: (err: { response?: { data?: { detail?: string } } }) =>
-      setError(err.response?.data?.detail ?? "Could not take that payment."),
+    onError: (err) => showRefusal(err, "Could not take that payment."),
   });
 
   return (
@@ -125,14 +157,14 @@ export default function CheckoutPanel() {
           <option value="">Select member</option>
           {members?.map((m) => (
             <option key={m.id} value={m.id}>
-              {m.username}
+              {personLabel(m)}
             </option>
           ))}
         </Select>
 
         <Select value={plan} onChange={(e) => setPlan(Number(e.target.value) || "")}>
           <option value="">Select plan</option>
-          {activePlans.map((p) => (
+          {plans?.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name} - {p.price} ({p.duration_days}d)
             </option>

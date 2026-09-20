@@ -1,7 +1,20 @@
 from django.contrib.auth import password_validation
+from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import serializers
 
 from .models import MemberProfile, Role, User
+
+
+def _has_mfa(user):
+    """Whether this person has an authenticator set up.
+
+    Reads the `mfa_device` the admin list views select_related, so a page of
+    accounts costs no query per row.
+    """
+    try:
+        return user.mfa_device.is_confirmed
+    except ObjectDoesNotExist:
+        return False
 
 
 class MemberProfileSerializer(serializers.ModelSerializer):
@@ -20,6 +33,11 @@ class MemberProfileSerializer(serializers.ModelSerializer):
         # join_date and membership_status are the gym's to set, not the
         # member's -- status in particular is derived from the payment ledger.
         read_only_fields = ["join_date", "membership_status"]
+
+    def validate_photo(self, photo):
+        from core.uploads import validate_image_upload
+
+        return validate_image_upload(photo)
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -117,14 +135,21 @@ class AdminMemberSerializer(serializers.ModelSerializer):
             "biometric_id",
             "last_check_in",
             "has_password",
+            "has_mfa",
         ]
 
     #: False for an account created without one -- imported members, mostly --
     #: so the admin screen can say who cannot log in yet.
     has_password = serializers.SerializerMethodField()
+    #: With two-step sign-in required, False means they have not signed in since
+    #: it was switched on -- or an admin has reset it.
+    has_mfa = serializers.SerializerMethodField()
 
     def get_has_password(self, obj):
         return obj.has_usable_password()
+
+    def get_has_mfa(self, obj):
+        return _has_mfa(obj)
 
     def get_trainer_name(self, obj):
         trainer = getattr(obj.profile, "trainer", None) if hasattr(obj, "profile") else None
@@ -219,7 +244,28 @@ class AdminUserSerializer(serializers.ModelSerializer):
             "password",
             "trainer",
             "biometric_id",
+            "has_mfa",
         ]
+
+    has_mfa = serializers.SerializerMethodField()
+
+    def get_has_mfa(self, obj):
+        return _has_mfa(obj)
+
+    def validate_trainer(self, trainer):
+        """Only a trainer at this gym may be put on a member's profile.
+
+        The field's queryset is bound at import and cannot know the tenant, so
+        the check belongs here: naming another gym's trainer would attach their
+        roster, call lists and PT reports to a gym they do not work at.
+        """
+        if trainer is None:
+            return trainer
+        from tenancy.people import people_here
+
+        if not people_here(Role.TRAINER).filter(pk=trainer.pk).exists():
+            raise serializers.ValidationError("That trainer is not at this gym.")
+        return trainer
 
     def validate_password(self, value):
         if value:

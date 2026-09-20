@@ -10,6 +10,7 @@ import {
   type Shift,
 } from "../../api/shifts";
 import { fetchUsers } from "../../api/users";
+import { personLabel } from "../../lib/people";
 import {
   Button,
   Card,
@@ -203,7 +204,7 @@ export default function AdminShiftsPage() {
               <option value="">Pick someone</option>
               {staff.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.username}
+                  {personLabel(s)}
                 </option>
               ))}
             </Select>

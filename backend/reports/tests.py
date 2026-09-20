@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from core.testing import TenantAPIMixin
+from core.testing import TenantAPIMixin, enrol
 
 from accounts.models import MemberProfile, Role
 from billing.models import Plan
@@ -27,6 +27,7 @@ def make_user(username, role=Role.MEMBER):
         username=username, email=f"{username}@example.com", password="pass12345", role=role
     )
     MemberProfile.objects.get_or_create(user=user)
+    enrol(user)
     return user
 
 
@@ -269,8 +270,7 @@ class EveryReportRouteIsAdminOnlyTests(TenantAPIMixin, APITestCase):
                 self.assertEqual(self.client.get(url).status_code, 403)
 
     def test_a_trainer_is_refused_every_read(self):
-        # A trainer's own numbers live under /api/commissions/my-earnings/;
-        # the gym's books are not theirs to read.
+        # The gym's books are not a trainer's to read.
         self.client.force_authenticate(self.trainer)
         for url in self._reads():
             with self.subTest(url=url):

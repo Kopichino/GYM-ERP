@@ -17,6 +17,7 @@ import {
   tableHeadRowClass,
   tableRowClass,
 } from "../../components/ui";
+import MfaResetCell from "../../components/MfaResetCell";
 import { fadeUp, staggerContainer } from "../../lib/motion";
 import { railColor } from "../../lib/theme";
 import { askConfirm } from "../../store/confirmStore";
@@ -128,6 +129,7 @@ export default function AdminTrainersPage() {
                   <th className={tableHeadCellClass}>Name</th>
                   <th className={tableHeadCellClass}>Email</th>
                   <th className={tableHeadCellClass}>Members</th>
+                  <th className={tableHeadCellClass}>Two-step sign-in</th>
                   <th className={tableHeadCellClass} />
                 </tr>
               </thead>
@@ -141,6 +143,13 @@ export default function AdminTrainersPage() {
                     <td className={tableCellClass}>{t.email}</td>
                     <td className={tableCellClass}>
                       {members?.filter((m) => m.trainer === t.id).length ?? 0}
+                    </td>
+                    <td className={tableCellClass}>
+                      <MfaResetCell
+                        userId={t.id}
+                        name={`${t.first_name} ${t.last_name}`.trim() || t.username}
+                        hasMfa={t.has_mfa}
+                      />
                     </td>
                     <td className={tableCellClass}>
                       <Button

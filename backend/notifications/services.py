@@ -19,6 +19,7 @@ from accounts.models import MembershipStatus, Role, User
 from billing.services import get_latest_completed_payment
 
 from .models import NotificationKind, NotificationLog
+from tenancy.people import members_here
 
 # How many days before expiry a member hears from us. Several nudges rather
 # than one, because the first is easy to miss and the last is the one that
@@ -95,7 +96,7 @@ def expiring_members(on=None):
     """
     on = on or timezone.localdate()
     targets = {on + timedelta(days=n): n for n in EXPIRY_WINDOWS}
-    for member in User.objects.filter(role=Role.MEMBER).select_related("profile"):
+    for member in members_here().select_related("profile"):
         payment = get_latest_completed_payment(member)
         if payment is None or payment.period_end not in targets:
             continue
@@ -109,7 +110,7 @@ def just_expired_members(on=None):
     """Members whose paid period ran out yesterday and who haven't renewed."""
     on = on or timezone.localdate()
     yesterday = on - timedelta(days=1)
-    for member in User.objects.filter(role=Role.MEMBER).select_related("profile"):
+    for member in members_here().select_related("profile"):
         payment = get_latest_completed_payment(member)
         if payment is None or payment.period_end != yesterday:
             continue

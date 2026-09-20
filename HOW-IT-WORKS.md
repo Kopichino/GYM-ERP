@@ -55,7 +55,11 @@ They can do the things that used to need a staff member:
 - Write workout splits and diet plans for those members
 - Run their own **classes**
 - See their **PT bookings**
-- Change their own password
+- Change their own password, and move two-step sign-in to a new phone
+
+Everyone, whatever their role, signs in with a password and a six-digit code
+from an authenticator app. The first time they sign in they set it up in about
+a minute and save ten recovery codes.
 
 ### Admins / owners
 
@@ -220,6 +224,7 @@ record, *even if they type in a real Gym B ID*.
 | Feature | What the gym does | What members see |
 |---|---|---|
 | **Branding** | Upload a logo, pick colours and a font | The app in their gym's colours |
+| **Public website** | Keep **Plans** and **Branding** up to date — nothing extra | The gym's own homepage, with today's prices, its address, phone, opening hours and colours |
 | **Web address** | Add `app.theirgym.com`, publish one DNS record, click Check | Their own address, not a shared link |
 | **Email** | Add two DNS records | Reminders arriving from *their* domain |
 | **Website form** | Copy a snippet into their marketing site | A contact form that feeds the pipeline |
@@ -294,6 +299,12 @@ it cannot say what it cost. A doubled callback is harmless.
 **The QR code expires in a minute.** It's a signed code over a one-minute
 window, so a screenshot passed around the car park stops working almost
 immediately, and there's no table of used codes to clean up.
+
+**A stolen password isn't enough.** Every account — member, trainer or admin —
+signs in with a password and a six-digit code from an authenticator app on the
+person's phone. A code works once, for about half a minute, and guesses are
+limited per account however many addresses they come from. A new password, a
+new phone, or an admin's reset signs that person out everywhere.
 
 **Deleting asks first.** Every destructive action names what is actually lost —
 "5 members will lose this badge", not "Are you sure?".
@@ -439,6 +450,13 @@ without appearing to anyone else.
 They use **Forgot password** on the login page and get a link by email. It works
 once, expires after a day, and signs them out everywhere else once used. For a
 member with no email on file, an admin sets a new password from Members.
+
+**What if someone loses their phone?**
+Everyone signs in with a password *and* a six-digit code from an authenticator
+app. When they set that up they get ten recovery codes, and any one of them gets
+them in once. From there they move to a new phone on their profile page. If the
+codes are gone too, an admin resets two-step sign-in from Members or Trainers,
+and the person sets it up again the next time they sign in.
 
 **Who owns the data?**
 Each gym's data belongs to that gym and is isolated from every other gym.

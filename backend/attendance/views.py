@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ReadOnlyModelViewSet
 
-from core.permissions import IsAdmin, IsOwnerOrAdmin, access
+from core.permissions import IsAdmin, IsOwnerOrAdmin, IsTenantMember, access
 
 from .models import CheckInMethod, CheckInOut
 from .qr import WINDOW_SECONDS, current_token, is_valid
@@ -28,7 +28,7 @@ class CheckInOutViewSet(ReadOnlyModelViewSet):
     their assigned members' plus their own."""
 
     serializer_class = CheckInOutSerializer
-    permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
+    permission_classes = [IsTenantMember, IsOwnerOrAdmin]
     throttle_scope = "checkinout"
 
     def get_queryset(self):

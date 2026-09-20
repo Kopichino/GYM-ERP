@@ -17,6 +17,7 @@ from billing.models import PaymentMethod, PaymentStatus, Plan
 from billing.services import record_payment
 
 from .mapping import BILLING, MEMBER, REQUIRED, TRAINER, detect_columns
+from tenancy.people import members_here, people_here
 
 MAX_ROWS = 5000
 
@@ -66,6 +67,13 @@ PAYMENT_STATUS_ALIASES = {
 
 class ImportError_(Exception):
     """Raised for problems with the file as a whole (not a single row)."""
+
+
+#: An import names people by email, and `User` spans every gym on the
+#: platform. Matching across that boundary let a gym adopt somebody else's
+#: account -- renaming it, enrolling it here, and handing this gym's admin
+#: its set-password and reset-MFA buttons. A row like that is refused.
+FOREIGN_EMAIL = "That email belongs to an account at another gym."
 
 
 def _key(value):
@@ -249,7 +257,9 @@ def _build_member(row, mapping, seen_emails):
     if email:
         seen_emails.add(email)
 
-    existing = User.objects.filter(email__iexact=email).first() if email else None
+    existing = members_here().filter(email__iexact=email).first() if email else None
+    if email and existing is None and User.objects.filter(email__iexact=email).exists():
+        errors.append(FOREIGN_EMAIL)
     status_raw = _key(values.get("membership_status"))
 
     return {
@@ -281,12 +291,12 @@ def _build_billing(row, mapping, _seen):
 
     member = None
     if email:
-        member = User.objects.filter(email__iexact=email).first()
+        member = members_here().filter(email__iexact=email).first()
     if not member and username:
-        member = User.objects.filter(username__iexact=username).first()
+        member = members_here().filter(username__iexact=username).first()
     if not member and member_name:
         parts = member_name.split()
-        qs = User.objects.filter(role=Role.MEMBER)
+        qs = members_here()
         if len(parts) >= 2:
             member = qs.filter(first_name__iexact=parts[0], last_name__iexact=parts[-1]).first()
         else:
@@ -353,7 +363,9 @@ def _build_trainer(row, mapping, seen_emails):
         # nothing.
         errors.append("A trainer needs an email address to get an account.")
 
-    existing = User.objects.filter(email__iexact=email).first() if email else None
+    existing = people_here().filter(email__iexact=email).first() if email else None
+    if email and existing is None and User.objects.filter(email__iexact=email).exists():
+        errors.append(FOREIGN_EMAIL)
 
     return {
         "action": "update" if existing else "create",
@@ -396,8 +408,10 @@ def commit_rows(built_rows, kind, *, actor):
 
 
 def _commit_member(data, _actor):
-    user = User.objects.filter(email__iexact=data["email"]).first() if data["email"] else None
+    user = members_here().filter(email__iexact=data["email"]).first() if data["email"] else None
     is_new = user is None
+    if is_new and data["email"] and User.objects.filter(email__iexact=data["email"]).exists():
+        raise ImportError_(FOREIGN_EMAIL)
 
     if is_new:
         username = data["username"] or data["email"].split("@")[0] or f"{data['first_name']}{data['last_name']}"
@@ -477,8 +491,10 @@ def _commit_trainer(data, _actor):
     # A trainer is an account at this gym. There is no separate profile to fall
     # back on any more, so `_build_trainer` refuses rows without an email rather
     # than letting them reach here and become nothing.
-    user = User.objects.filter(email__iexact=data["email"]).first()
+    user = people_here().filter(email__iexact=data["email"]).first()
     is_new = user is None
+    if is_new and User.objects.filter(email__iexact=data["email"]).exists():
+        raise ImportError_(FOREIGN_EMAIL)
     if is_new:
         username = data["username"] or data["email"].split("@")[0] or data["name"]
         user = User(

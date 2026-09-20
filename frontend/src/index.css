@@ -224,3 +224,85 @@ body {
     padding-top: 0;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   The public website (pages/LandingPage.tsx).
+
+   Its own look, scoped to `.site` so none of it leaks into the portal: a warm
+   near-black palette pinned dark whatever theme the visitor's portal is in, a
+   condensed industrial display face, and a grotesque for body copy.
+
+   The accent is the gym's brand colour (`--brand-accent`, set from the
+   Branding page by useBranding), so changing it there repaints the website
+   too. The site needs the accent in three strengths and one colour cannot do
+   all three jobs, so the others are mixed from it:
+
+     --color-accent         emphasis: display type, rules, marks
+     --color-accent-strong  surfaces carrying text (buttons) -- a little darker
+     --color-accent-hover   the hover state for those surfaces
+     --color-accent-soft    accent text below display size -- a little lighter
+
+   `--color-on-accent` (the text on those buttons) is set inline by the page,
+   black or white depending on how light the gym's colour is.
+   --------------------------------------------------------------------------- */
+.site {
+  color-scheme: dark;
+  --color-bg: #0a0909;
+  --color-surface: #110f10;
+  --color-surface-2: #191617;
+  --color-border: #272223;
+  --color-text: #f4f2f2;
+  --color-text-muted: #8d8887;
+  --color-on-accent: #ffffff;
+  --color-accent: var(--brand-accent, #e62533);
+  --color-accent-strong: color-mix(in oklab, var(--color-accent) 84%, black);
+  --color-accent-hover: color-mix(in oklab, var(--color-accent) 93%, black);
+  --color-accent-soft: color-mix(in oklab, var(--color-accent) 78%, white);
+  --font-display: "Big Shoulders Display", "Haettenschweiler", "Arial Narrow", sans-serif;
+  --font-sans: "Schibsted Grotesk", system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Set uppercase at 0.88 leading with a hair of positive tracking: Big Shoulders
+   has tall caps for its width, and tighter leading collides once a headline
+   runs to three lines. */
+.site .font-display {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-variation-settings: "wght" 800;
+  text-transform: uppercase;
+  letter-spacing: 0.005em;
+  line-height: 0.88;
+}
+
+.site ::selection {
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.site :focus-visible {
+  outline: 2px solid var(--color-accent-soft);
+  outline-offset: 3px;
+}
+
+/* The disciplines band. The track holds the list twice and moves exactly -50%,
+   so the loop has no visible seam. */
+@keyframes site-marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.site .anim-marquee {
+  animation: site-marquee var(--marquee-duration, 54s) linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site .anim-marquee {
+    animation: none;
+  }
+}

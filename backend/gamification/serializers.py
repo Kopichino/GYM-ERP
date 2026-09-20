@@ -1,9 +1,11 @@
 from rest_framework import serializers
 
-from .models import Badge, GamificationProfile, MemberBadge, PersonalRecord
+from core.uniqueness import Rule, SaveConflictsAsValidationErrors, UniqueInScope
+
+from .models import Badge, Criterion, GamificationProfile, MemberBadge, PersonalRecord
 
 
-class BadgeSerializer(serializers.ModelSerializer):
+class BadgeSerializer(SaveConflictsAsValidationErrors, serializers.ModelSerializer):
     tier_name = serializers.CharField(source="get_tier_display", read_only=True)
     criterion_name = serializers.CharField(source="get_criterion_display", read_only=True)
     # How many members hold it, so an admin can see whether a threshold is set
@@ -33,6 +35,28 @@ class BadgeSerializer(serializers.ModelSerializer):
             "awarded_count",
         ]
         read_only_fields = ["id", "awarded_count"]
+        # The three unique constraints on Badge, said in words. A lift badge is
+        # unique by exercise and weight; any other by criterion and threshold.
+        validators = [
+            UniqueInScope(
+                Rule("code", "A badge with this code already exists."),
+                Rule(
+                    ("criterion", "threshold"),
+                    "There is already a badge for this at that threshold.",
+                    applies=lambda values: values["criterion"] != Criterion.LIFT,
+                ),
+                Rule(
+                    ("criterion", "exercise", "threshold"),
+                    "There is already a lift badge for this exercise at that weight.",
+                    applies=lambda values: values["criterion"] == Criterion.LIFT,
+                ),
+            )
+        ]
+
+    def validate_image(self, image):
+        from core.uploads import validate_image_upload
+
+        return validate_image_upload(image)
 
     def validate(self, attrs):
         """Say in words what the check constraint would otherwise say as a 500.
@@ -40,8 +64,6 @@ class BadgeSerializer(serializers.ModelSerializer):
         The database is still the thing that guarantees this; the point here is
         only that an admin gets told which field to fix.
         """
-        from .models import Criterion
-
         criterion = attrs.get(
             "criterion", getattr(self.instance, "criterion", None)
         )

@@ -1,4 +1,4 @@
-import { isoDate } from "../../lib/dates";
+import { dateRangeProblem, isoDate } from "../../lib/dates";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { useState } from "react";
@@ -51,6 +51,9 @@ export default function AdminExpensesPage() {
   const [error, setError] = useState("");
 
   const filters = { from, to };
+  // Caught here and said next to the dates, rather than sent off and shown
+  // as a period with nothing in it.
+  const rangeProblem = dateRangeProblem(from, to);
   const { data: categories } = useQuery({
     queryKey: ["expenses", "categories"],
     queryFn: fetchExpenseCategories,
@@ -58,10 +61,12 @@ export default function AdminExpensesPage() {
   const { data: expenses, isLoading, isError } = useQuery({
     queryKey: ["expenses", "list", from, to],
     queryFn: () => fetchExpenses(filters),
+    enabled: !rangeProblem,
   });
   const { data: summary } = useQuery({
     queryKey: ["expenses", "summary", from, to],
     queryFn: () => fetchExpenseSummary(filters),
+    enabled: !rangeProblem,
   });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["expenses"] });
@@ -91,7 +96,13 @@ export default function AdminExpensesPage() {
     mutationFn: () => createExpenseCategory({ name: newCategory }),
     onSuccess: () => {
       setNewCategory("");
+      setError("");
       invalidate();
+    },
+    // A duplicate name comes back as a field error; say it rather than failing silently.
+    onError: (err: { response?: { data?: Record<string, string[]> } }) => {
+      const first = err.response?.data && Object.entries(err.response.data)[0];
+      setError(first ? `${first[0]}: ${first[1]}` : "Could not add that category.");
     },
   });
 
@@ -104,25 +115,47 @@ export default function AdminExpensesPage() {
         <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
           <div>
             <p className="font-display text-3xl leading-none text-[var(--color-text)]">
-              {summary?.total ?? "0"}
+              {rangeProblem ? "-" : (summary?.total ?? "0")}
             </p>
             <p className="mt-1 text-[11px] uppercase tracking-wide text-[var(--color-text-muted)]">
-              Spent in this period · {summary?.count ?? 0} entries
+              {rangeProblem ? (
+                "Fix the dates to see a period"
+              ) : (
+                <>Spent in this period · {summary?.count ?? 0} entries</>
+              )}
             </p>
           </div>
           <div className="flex gap-2">
             <label className="text-xs text-[var(--color-text-muted)]">
               From
-              <Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="mt-1" />
+              <Input
+                type="date"
+                value={from}
+                max={to || undefined}
+                onChange={(e) => setFrom(e.target.value)}
+                className="mt-1"
+              />
             </label>
             <label className="text-xs text-[var(--color-text-muted)]">
               To
-              <Input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="mt-1" />
+              <Input
+                type="date"
+                value={to}
+                min={from || undefined}
+                aria-invalid={Boolean(rangeProblem)}
+                onChange={(e) => setTo(e.target.value)}
+                className="mt-1"
+              />
             </label>
           </div>
         </div>
+        {rangeProblem && (
+          <div className="mt-2 flex justify-end">
+            <ErrorText>{rangeProblem}</ErrorText>
+          </div>
+        )}
 
-        {summary && summary.by_category.length > 0 && (
+        {!rangeProblem && summary && summary.by_category.length > 0 && (
           <div className="grid gap-6 border-t border-[var(--color-border)] pt-3 lg:grid-cols-2">
             <ExpenseBreakdownChart slices={summary.by_category} />
             {/* The bars stay alongside the donut: a pie is good for shares and
@@ -240,9 +273,11 @@ export default function AdminExpensesPage() {
 
       <Card accent={railColor(2)}>
         <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
-          {expenses?.length ?? 0} expenses
+          {rangeProblem ? "Expenses" : `${expenses?.length ?? 0} expenses`}
         </h2>
-        {isLoading ? (
+        {rangeProblem ? (
+          <EmptyState>Fix the dates above to see that period.</EmptyState>
+        ) : isLoading ? (
           <LoadingState />
         ) : isError ? (
           <ErrorState />

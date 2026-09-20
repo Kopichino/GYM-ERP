@@ -59,6 +59,7 @@ const AdminWebsiteFormPage = lazy(
   () => import("./pages/admin/AdminWebsiteFormPage"),
 );
 const AdminFeedbackPage = lazy(() => import("./pages/admin/AdminFeedbackPage"));
+const AdminAccountPage = lazy(() => import("./pages/admin/AdminAccountPage"));
 const QrCheckInPage = lazy(() => import("./pages/QrCheckInPage"));
 const TrainerDashboardPage = lazy(() => import("./pages/trainer/TrainerDashboardPage"));
 const TrainerMembersPage = lazy(() => import("./pages/trainer/TrainerMembersPage"));
@@ -152,6 +153,7 @@ export default function App() {
               <Route path="domains" element={<AdminDomainsPage />} />
               <Route path="email" element={<AdminEmailPage />} />
               <Route path="website-form" element={<AdminWebsiteFormPage />} />
+              <Route path="account" element={<AdminAccountPage />} />
             </Route>
           </Route>
         </Route>

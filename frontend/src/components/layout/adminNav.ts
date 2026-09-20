@@ -65,6 +65,12 @@ export const ADMIN_GROUPS: PortalGroup[] = [
       { to: "/admin/website-form", label: "Website Form", icon: ICONS.form },
     ],
   },
+  {
+    // The admin's own account -- password and two-step sign-in. Members and
+    // trainers have a profile page for this; admins had nowhere.
+    name: "You",
+    links: [{ to: "/admin/account", label: "My Account", icon: ICONS.person }],
+  },
 ];
 
 /** The page title for a pathname inside the admin portal. */

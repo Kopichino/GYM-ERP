@@ -8,7 +8,7 @@ from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from core.testing import TenantAPIMixin
+from core.testing import TenantAPIMixin, enrol
 
 from accounts.models import MemberProfile, Role
 from billing.models import Plan
@@ -25,6 +25,7 @@ def make_user(username, role=Role.MEMBER):
         username=username, email=f"{username}@example.com", password="pass12345", role=role
     )
     MemberProfile.objects.get_or_create(user=user)
+    enrol(user)
     return user
 
 

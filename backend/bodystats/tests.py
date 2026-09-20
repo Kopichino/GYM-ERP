@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
-from core.testing import TenantAPIMixin
+from core.testing import TenantAPIMixin, enrol
 
 from accounts.models import MemberProfile, Role
 
@@ -19,6 +19,7 @@ def make_user(username, role=Role.MEMBER, height_cm=None):
         username=username, email=f"{username}@example.com", password="pass12345", role=role
     )
     MemberProfile.objects.update_or_create(user=user, defaults={"height_cm": height_cm})
+    enrol(user)
     user.refresh_from_db()
     return user
 

@@ -1,16 +1,18 @@
 from rest_framework import serializers
 
+from core.uniqueness import Rule, SaveConflictsAsValidationErrors, UniqueInScope
 from core.uploads import validate_receipt
 
 from .models import Expense, ExpenseCategory
 
 
-class ExpenseCategorySerializer(serializers.ModelSerializer):
+class ExpenseCategorySerializer(SaveConflictsAsValidationErrors, serializers.ModelSerializer):
     expense_count = serializers.SerializerMethodField()
 
     class Meta:
         model = ExpenseCategory
         fields = ["id", "name", "description", "is_active", "expense_count"]
+        validators = [UniqueInScope(Rule("name", "A category with this name already exists."))]
 
     def get_expense_count(self, obj):
         return obj.expenses.count()

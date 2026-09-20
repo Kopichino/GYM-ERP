@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { fetchMe, refresh } from "../api/auth";
+import { fetchMe } from "../api/auth";
+import { refreshAccessToken } from "../lib/api";
 import { useAuthStore } from "../store/authStore";
 
 const COLD_START_HINT_MS = 3000;
@@ -10,6 +11,11 @@ const COLD_START_HINT_MS = 3000;
  * then loads /me. Also exposes a "slow" flag so the UI can show a
  * "waking up the server..." message instead of a bare spinner during a
  * Render free-tier cold start.
+ *
+ * The refresh goes through `refreshAccessToken`, which shares one in-flight
+ * request between callers. This effect runs twice under StrictMode in
+ * development, and each run used to send its own refresh -- which the 401
+ * retry in `lib/api` then sent again.
  */
 export function useAuthBootstrap() {
   const status = useAuthStore((s) => s.status);
@@ -25,7 +31,12 @@ export function useAuthBootstrap() {
 
     (async () => {
       try {
-        const access = await refresh();
+        const access = await refreshAccessToken();
+        if (cancelled) return;
+        if (!access) {
+          clear();
+          return;
+        }
         useAuthStore.getState().setAccessToken(access);
         const user = await fetchMe();
         if (!cancelled) setAuth(access, user);

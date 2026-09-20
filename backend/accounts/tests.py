@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.test import override_settings
 from rest_framework.test import APITestCase
 
 from core.testing import TenantAPIMixin
@@ -32,6 +33,9 @@ class LoginRefreshTests(TenantAPIMixin, APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="member", email="m@example.com", password="pass12345")
 
+    # Two-step sign-in off, so the password alone opens a session: this is about
+    # how a session is delivered. tests_mfa covers the same for the two-step path.
+    @override_settings(MFA_REQUIRED=False)
     def test_login_sets_httponly_refresh_cookie_not_in_body(self):
         resp = self.client.post("/api/auth/login/", {"username": "member", "password": "pass12345"})
         self.assertEqual(resp.status_code, 200)

@@ -3,13 +3,14 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from accounts.models import User
-from core.permissions import access, IsAdminOrReadOnly
+from core.permissions import access, IsPlatformStaffOrReadOnly, IsTenantMember
+from core.views import RefuseProtectedDeleteMixin
 from core.scoping import may_write_for
+from tenancy.people import people_here_or_404
 from workouts.models import Weekday
 
 from .models import DietDay, DietMeal, DietMealItem, DietPlan, FoodItem
@@ -23,10 +24,11 @@ from .serializers import (
 )
 
 
-class FoodItemViewSet(ModelViewSet):
-    """The shared catalogue. Anyone signed in can read it while building a
-    plan; only an admin edits it, so one member's typo can't skew every plan
-    that references the same food.
+class FoodItemViewSet(RefuseProtectedDeleteMixin, ModelViewSet):
+    """The shared catalogue: one list for every gym on the platform. Anyone
+    who belongs to the gym can read it while building a plan; only platform
+    staff edit it, because a food's macros feed every gym's plans at once --
+    neither a member's typo nor one gym's admin should be able to skew them.
 
     Unpaginated, like the exercise catalogue: the food picker offers the whole
     list, and a default page of 20 silently hid most of it -- a member looking
@@ -34,8 +36,11 @@ class FoodItemViewSet(ModelViewSet):
     """
 
     serializer_class = FoodItemSerializer
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsPlatformStaffOrReadOnly]
     pagination_class = None
+    protected_delete_message = (
+        "This food is used in a diet plan, so it can't be deleted. Deactivate it instead."
+    )
 
     def get_queryset(self):
         queryset = FoodItem.objects.all()
@@ -55,13 +60,16 @@ class _OwnedPlanMixin:
     with it, a trainer or admin may work on one of their people's -- the same
     rule the workout split uses."""
 
-    permission_classes = [IsAuthenticated]
+    # Standing at the gym in the URL, not just a signed-in account: without it a
+    # person from another gym could read this gym's (empty) list for them and
+    # file new rows under a gym they do not belong to.
+    permission_classes = [IsTenantMember]
 
     def _target_member(self):
         member_id = self.request.query_params.get("member")
         if not member_id or str(member_id) == str(self.request.user.id):
             return self.request.user
-        member = get_object_or_404(User, pk=member_id)
+        member = people_here_or_404(member_id)
         if not may_write_for(access(self.request), member):
             raise PermissionDenied("Not one of your members.")
         return member
@@ -141,7 +149,10 @@ class DietDayViewSet(_OwnedPlanMixin, ModelViewSet):
         serializer.save()
 
     def perform_update(self, serializer):
-        self._check_owns(serializer.instance.plan)
+        # The row as it stands is already this member's -- the queryset says so.
+        # The parent named in the body has to be as well, or a PATCH moves the
+        # row into somebody else's plan.
+        self._check_owns(serializer.validated_data.get("plan", serializer.instance.plan))
         serializer.save()
 
 
@@ -167,7 +178,10 @@ class DietMealViewSet(_OwnedPlanMixin, ModelViewSet):
         serializer.save()
 
     def perform_update(self, serializer):
-        self._check_owns(serializer.instance.day)
+        # The row as it stands is already this member's -- the queryset says so.
+        # The parent named in the body has to be as well, or a PATCH moves the
+        # row into somebody else's plan.
+        self._check_owns(serializer.validated_data.get("day", serializer.instance.day))
         serializer.save()
 
 
@@ -192,5 +206,8 @@ class DietMealItemViewSet(_OwnedPlanMixin, ModelViewSet):
         serializer.save()
 
     def perform_update(self, serializer):
-        self._check_owns(serializer.instance.meal)
+        # The row as it stands is already this member's -- the queryset says so.
+        # The parent named in the body has to be as well, or a PATCH moves the
+        # row into somebody else's plan.
+        self._check_owns(serializer.validated_data.get("meal", serializer.instance.meal))
         serializer.save()

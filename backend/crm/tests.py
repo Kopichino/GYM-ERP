@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from core.testing import TenantAPIMixin
+from core.testing import TenantAPIMixin, enrol
 
 from accounts.models import MemberProfile, MembershipStatus, Role
 from attendance.models import CheckInOut
@@ -25,6 +25,7 @@ def make_user(username, role):
         username=username, email=f"{username}@example.com", password="pass12345", role=role
     )
     MemberProfile.objects.get_or_create(user=user)
+    enrol(user)
     return user
 
 

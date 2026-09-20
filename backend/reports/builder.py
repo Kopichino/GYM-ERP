@@ -6,6 +6,7 @@ in a whitelist. A queryset is never assembled from a raw client string, which is
 what turns "build me a report" into "read any table you like".
 """
 
+from datetime import date
 from decimal import Decimal
 
 from django.db.models import Avg, Count, Max, Min, Sum
@@ -93,6 +94,34 @@ class ReportError(Exception):
     """A definition that cannot be run, with a reason to show the builder."""
 
 
+END_BEFORE_START = "The end date is before the start date."
+
+
+def _date(definition, key):
+    """One end of the window as a date, or None when it is left out."""
+    value = definition.get(key)
+    if value in (None, ""):
+        return None
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value))
+    except ValueError:
+        raise ReportError(f"'{key}' must be a date written as YYYY-MM-DD.") from None
+
+
+def check_window(definition):
+    """(start, end) as dates, refusing a malformed date or a backwards window.
+
+    Checked here rather than left to the ORM, which raised on a malformed date
+    -- a 500 -- and answered a backwards window with an empty report.
+    """
+    start, end = _date(definition, "start"), _date(definition, "end")
+    if start and end and end < start:
+        raise ReportError(END_BEFORE_START)
+    return start, end
+
+
 def _resolve(source, name):
     field = SOURCES[source]["fields"].get(name)
     if field is None:
@@ -110,10 +139,11 @@ def run(definition):
     queryset = spec["model"].objects.all()
 
     # Date window, applied against the source's own natural date field.
-    if definition.get("start"):
-        queryset = queryset.filter(**{f"{spec['date_field']}__gte": definition["start"]})
-    if definition.get("end"):
-        queryset = queryset.filter(**{f"{spec['date_field']}__lte": definition["end"]})
+    start, end = check_window(definition)
+    if start:
+        queryset = queryset.filter(**{f"{spec['date_field']}__gte": start})
+    if end:
+        queryset = queryset.filter(**{f"{spec['date_field']}__lte": end})
 
     for clause in definition.get("filters", []) or []:
         field, operator, value = clause.get("field"), clause.get("op", "eq"), clause.get("value")

@@ -230,7 +230,18 @@ class WebhookTests(TenantAPIMixin, APITestCase):
     def captured(self, order_id="order_W1", payment_id="pay_W1"):
         return {
             "event": "payment.captured",
-            "payload": {"payment": {"entity": {"id": payment_id, "order_id": order_id}}},
+            # A real capture names the sum and the currency, and the webhook
+            # settles nothing unless they match what we priced.
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": payment_id,
+                        "order_id": order_id,
+                        "amount": 150000,
+                        "currency": "INR",
+                    }
+                }
+            },
         }
 
     def test_a_signed_capture_settles_the_order(self):

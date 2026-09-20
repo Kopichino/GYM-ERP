@@ -1,30 +1,8 @@
-import { AnimatePresence, motion } from "framer-motion";
 import ThemeToggle from "../ThemeToggle";
-import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { logout } from "../../api/auth";
 import { useAuthStore } from "../../store/authStore";
 import BrandMark from "../BrandMark";
-
-function HamburgerIcon({ open }: { open: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2}>
-      {/* `d` is also set statically: framer-motion only supplies it once the
-          animation runs, so without this the bars are missing on first paint. */}
-      <motion.path
-        strokeLinecap="round"
-        d="M4 7h16"
-        animate={open ? { d: "M6 6l12 12" } : { d: "M4 7h16" }}
-      />
-      <motion.path strokeLinecap="round" animate={{ opacity: open ? 0 : 1 }} d="M4 12h16" />
-      <motion.path
-        strokeLinecap="round"
-        d="M4 17h16"
-        animate={open ? { d: "M6 18l12-12" } : { d: "M4 17h16" }}
-      />
-    </svg>
-  );
-}
 
 /**
  * Log out: outlined and faintly tinted, never filled.
@@ -47,7 +25,6 @@ export default function Navbar() {
   const navigate = useNavigate();
   const location = useLocation();
   const isAdmin = location.pathname.startsWith("/admin");
-  const [menuOpen, setMenuOpen] = useState(false);
 
   async function handleLogout() {
     try {
@@ -77,50 +54,19 @@ export default function Navbar() {
       >
         <BrandMark className="font-display text-2xl tracking-wide text-[var(--color-text)]" />
         <div className="flex items-center gap-2">
-          {/* Beside Log out rather than inside the mobile menu: it is a
-              display preference, wanted at the moment the screen is the wrong
+          {/* Up here beside Log out rather than in a menu: it is a display
+              preference, wanted at the moment the screen is the wrong
               brightness, not something to go hunting for. */}
           <ThemeToggle />
-          <button
-            onClick={handleLogout}
-            className={`hidden md:block ${LOGOUT_CLASS}`}
-          >
+          {/* Log out, as itself, at every width. Phones used to get a hamburger
+              whose only item was Log out, sitting beside the portal's own
+              navigation button: two menu buttons, one of which opened almost
+              nothing. */}
+          <button onClick={handleLogout} className={LOGOUT_CLASS}>
             Log out
-          </button>
-          <button
-            onClick={() => setMenuOpen((o) => !o)}
-            aria-label={menuOpen ? "Close menu" : "Open menu"}
-            aria-expanded={menuOpen}
-            className="rounded-md border border-[var(--color-border)] p-2 text-[var(--color-text)] md:hidden"
-          >
-            <HamburgerIcon open={menuOpen} />
           </button>
         </div>
       </nav>
-
-      <AnimatePresence>
-        {menuOpen && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.25, ease: "easeInOut" }}
-            className="overflow-hidden border-t border-[var(--color-border)] md:hidden"
-          >
-            <div className="flex flex-col gap-1 px-4 py-3">
-              <button
-                onClick={() => {
-                  setMenuOpen(false);
-                  handleLogout();
-                }}
-                className={`text-left ${LOGOUT_CLASS}`}
-              >
-                Log out
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </header>
   );
 }

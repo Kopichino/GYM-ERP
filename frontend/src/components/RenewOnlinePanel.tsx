@@ -3,7 +3,7 @@ import { useState } from "react";
 import {
   createOnlineOrder,
   fetchOnlineConfig,
-  fetchPlans,
+  fetchSellablePlans,
   verifyOnlinePayment,
 } from "../api/billing";
 import { useBranding } from "../hooks/useBranding";
@@ -76,7 +76,7 @@ export default function RenewOnlinePanel() {
     queryKey: ["billing", "online-config"],
     queryFn: fetchOnlineConfig,
   });
-  const { data: plans } = useQuery({ queryKey: ["plans"], queryFn: fetchPlans });
+  const { data: plans } = useQuery({ queryKey: ["plans", "sellable"], queryFn: fetchSellablePlans });
 
   const confirm = useMutation({
     mutationFn: verifyOnlinePayment,

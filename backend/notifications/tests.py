@@ -14,7 +14,7 @@ from billing.services import record_payment
 from .models import NotificationKind, NotificationLog
 from .services import EXPIRY_WINDOWS, expiring_members, send_expiry_reminders
 
-from core.testing import TenantAPIMixin
+from core.testing import TenantAPIMixin, enrol
 
 User = get_user_model()
 TODAY = timezone.localdate()
@@ -28,6 +28,7 @@ def make_member(username, email=None):
         role=Role.MEMBER,
     )
     MemberProfile.objects.get_or_create(user=user)
+    enrol(user)
     return user
 
 

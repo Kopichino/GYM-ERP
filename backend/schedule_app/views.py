@@ -9,7 +9,7 @@ from rest_framework.viewsets import ModelViewSet
 from .models import BookingStatus, ClassBooking, ClassSession
 from .serializers import ClassBookingSerializer, ClassSessionSerializer
 from .services import BookingError, book, cancel, mark_attended
-from core.permissions import access
+from core.permissions import access, IsTenantMember
 
 
 def _id_list(data, key):
@@ -31,12 +31,19 @@ def _id_list(data, key):
 
 
 class CanManageClass(BasePermission):
-    """Anyone authenticated may read the schedule. Admins may edit any class;
-    a trainer may edit only the classes they run."""
+    """Anyone who belongs to this gym may read its schedule. Admins may edit
+    any class; a trainer may edit only the classes they run.
+
+    Reading once asked only whether the caller was signed in, which let a
+    member of any gym on the platform read this one's timetable."""
 
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:
-            return bool(request.user and request.user.is_authenticated)
+            return bool(
+                request.user
+                and request.user.is_authenticated
+                and access(request).belongs
+            )
         return bool(
             request.user
             and request.user.is_authenticated
@@ -49,6 +56,18 @@ class CanManageClass(BasePermission):
         return obj.trainer_id == request.user.id
 
 
+def _class_id(pk):
+    """The class id from the URL, or None when it cannot be one.
+
+    The booking service looks the class up with a row lock, and handed "abc" that
+    raised a ValueError nobody caught -- a 500 for a mistyped link.
+    """
+    try:
+        return int(pk)
+    except (TypeError, ValueError):
+        return None
+
+
 class ClassSessionViewSet(ModelViewSet):
     serializer_class = ClassSessionSerializer
     permission_classes = [CanManageClass]
@@ -59,21 +78,27 @@ class ClassSessionViewSet(ModelViewSet):
             return True
         return session.trainer_id == user.id
 
-    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
+    @action(detail=True, methods=["post"], permission_classes=[IsTenantMember])
     def book(self, request, pk=None):
         """Take a seat on this class, or join the waitlist if it's full."""
+        session_id = _class_id(pk)
+        if session_id is None:
+            return Response({"detail": "No such class."}, status=404)
         try:
-            booking = book(pk, request.user)
+            booking = book(session_id, request.user)
         except ClassSession.DoesNotExist:
             return Response({"detail": "No such class."}, status=404)
         except BookingError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response(ClassBookingSerializer(booking).data, status=201)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
+    @action(detail=True, methods=["post"], permission_classes=[IsTenantMember])
     def cancel(self, request, pk=None):
+        session_id = _class_id(pk)
+        if session_id is None:
+            return Response({"detail": "No such class."}, status=404)
         try:
-            booking, promoted = cancel(pk, request.user)
+            booking, promoted = cancel(session_id, request.user)
         except ClassSession.DoesNotExist:
             return Response({"detail": "No such class."}, status=404)
         except BookingError as exc:
@@ -87,7 +112,7 @@ class ClassSessionViewSet(ModelViewSet):
             }
         )
 
-    @action(detail=True, methods=["get"], permission_classes=[IsAuthenticated])
+    @action(detail=True, methods=["get"], permission_classes=[IsTenantMember])
     def roster(self, request, pk=None):
         """Who is coming. Visible to the class's own trainer and to admins."""
         session = self.get_object()
@@ -96,7 +121,7 @@ class ClassSessionViewSet(ModelViewSet):
         bookings = session.bookings.exclude(status=BookingStatus.CANCELLED).select_related("member")
         return Response(ClassBookingSerializer(bookings, many=True).data)
 
-    @action(detail=True, methods=["post"], permission_classes=[IsAuthenticated])
+    @action(detail=True, methods=["post"], permission_classes=[IsTenantMember])
     def attendance(self, request, pk=None):
         """Mark off who actually turned up."""
         session = self.get_object()
@@ -128,7 +153,7 @@ class MyBookingsView(ListAPIView):
     """A member's own upcoming and past bookings."""
 
     serializer_class = ClassBookingSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsTenantMember]
 
     def get_queryset(self):
         return (

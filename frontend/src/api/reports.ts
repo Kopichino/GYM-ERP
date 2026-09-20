@@ -58,7 +58,6 @@ export interface PtPerformanceReport {
     member_count: number;
     revenue: string;
     payment_count: number;
-    commission: string;
     member_visits: number;
   }[];
 }

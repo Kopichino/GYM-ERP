@@ -1,17 +1,43 @@
 from decimal import Decimal
 
+from django.core.exceptions import ObjectDoesNotExist
 from rest_framework import serializers
 
 from accounts.models import User
+from core.uniqueness import Rule, SaveConflictsAsValidationErrors, UniqueInScope
 
-from .models import DayPass, Discount, Payment, Plan
+from .models import DayPass, Discount, Payment, PaymentMethod, Plan
 from .services import get_latest_completed_payment
 
 
-class PlanSerializer(serializers.ModelSerializer):
+class PlanSerializer(SaveConflictsAsValidationErrors, serializers.ModelSerializer):
     class Meta:
         model = Plan
         fields = ["id", "name", "price", "duration_days", "description", "is_active"]
+        validators = [UniqueInScope(Rule("name", "A plan with this name already exists."))]
+
+
+class PublicPlanSerializer(serializers.ModelSerializer):
+    """What the public website's price list shows, and nothing more."""
+
+    class Meta:
+        model = Plan
+        fields = ["id", "name", "price", "duration_days", "description"]
+        read_only_fields = fields
+
+
+def invoice_summary(payment):
+    """The invoice issued for `payment` as a ledger row shows it, or None.
+
+    Carried on the payment itself so every page of the ledger is complete on its
+    own. The Billing pages used to fetch invoices as a separate list and match
+    them up by id -- which only worked while both lists fitted on one page.
+    """
+    try:
+        invoice = payment.invoice
+    except ObjectDoesNotExist:
+        return None
+    return {"id": invoice.pk, "number": invoice.number}
 
 
 class AdminPaymentSerializer(serializers.ModelSerializer):
@@ -21,10 +47,40 @@ class AdminPaymentSerializer(serializers.ModelSerializer):
     member_username = serializers.CharField(source="member.username", read_only=True)
     discount_code = serializers.CharField(source="discount.code", read_only=True, default=None)
     gross_amount = serializers.SerializerMethodField()
+    invoice = serializers.SerializerMethodField()
 
     def get_gross_amount(self, obj):
         """What it would have cost without the offer -- derived, not stored."""
         return str(obj.amount + obj.discount_amount)
+
+    def get_invoice(self, obj):
+        return invoice_summary(obj)
+
+    def validate_member(self, member):
+        """A payment may only be recorded against a member of this gym.
+
+        `member` is a plain id from the form and `User` spans every gym, so
+        without this an admin could file a payment against somebody they have
+        no standing over -- and the ledger row would land in this gym's books.
+        """
+        from tenancy.people import people_here
+
+        if not people_here().filter(pk=member.pk).exists():
+            raise serializers.ValidationError("That person is not a member of this gym.")
+        return member
+
+    def validate_plan(self, plan):
+        """A new payment, or one moved to a different plan, needs a plan on sale.
+
+        A payment that stays on the plan it was recorded against can still be
+        corrected after that plan is retired -- that is history, not a sale.
+        """
+        from .services import NOT_ON_SALE, is_sellable
+
+        unchanged = self.instance is not None and self.instance.plan_id == plan.pk
+        if not unchanged and not is_sellable(plan):
+            raise serializers.ValidationError(NOT_ON_SALE)
+        return plan
 
     class Meta:
         model = Payment
@@ -49,6 +105,7 @@ class AdminPaymentSerializer(serializers.ModelSerializer):
             "external_reference",
             "gateway",
             "created_at",
+            "invoice",
         ]
         read_only_fields = [
             "period_start",
@@ -64,6 +121,7 @@ class MyPaymentSerializer(serializers.ModelSerializer):
 
     plan_name = serializers.CharField(source="plan.name", read_only=True)
     discount_code = serializers.CharField(source="discount.code", read_only=True, default=None)
+    invoice = serializers.SerializerMethodField()
 
     class Meta:
         model = Payment
@@ -78,8 +136,12 @@ class MyPaymentSerializer(serializers.ModelSerializer):
             "paid_date",
             "period_start",
             "period_end",
+            "invoice",
         ]
         read_only_fields = fields
+
+    def get_invoice(self, obj):
+        return invoice_summary(obj)
 
 
 class AdminMemberBillingSerializer(serializers.ModelSerializer):
@@ -128,7 +190,7 @@ class AdminMemberBillingSerializer(serializers.ModelSerializer):
         return str(payment.amount) if payment else None
 
 
-class DiscountSerializer(serializers.ModelSerializer):
+class DiscountSerializer(SaveConflictsAsValidationErrors, serializers.ModelSerializer):
     times_used = serializers.IntegerField(read_only=True)
     plan_names = serializers.SerializerMethodField()
 
@@ -151,6 +213,17 @@ class DiscountSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "created_at"]
+        # Codes are stored upper-cased and matched at the till ignoring case, so
+        # "save10" is the same code as "SAVE10" -- compare what will be stored.
+        validators = [
+            UniqueInScope(
+                Rule(
+                    "code",
+                    "An offer with this code already exists.",
+                    normalise={"code": lambda code: code.strip().upper()},
+                )
+            )
+        ]
 
     def get_plan_names(self, obj):
         names = [p.name for p in obj.plans.all()]
@@ -182,7 +255,9 @@ class CheckoutSerializer(serializers.Serializer):
     amount = serializers.DecimalField(
         max_digits=8, decimal_places=2, min_value=Decimal("0"), required=False, allow_null=True
     )
-    method = serializers.CharField(required=False)
+    # One of the known methods. Free text here reached the ledger and the
+    # exports as whatever the browser sent.
+    method = serializers.ChoiceField(choices=PaymentMethod.choices, required=False)
     paid_date = serializers.DateField(required=False, allow_null=True)
     notes = serializers.CharField(required=False, allow_blank=True)
 

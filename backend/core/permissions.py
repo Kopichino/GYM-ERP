@@ -17,6 +17,7 @@ plausible answer to the wrong question; an AttributeError is found by the
 tests.
 """
 
+from rest_framework.exceptions import NotFound
 from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 from tenancy.resolution import Access
@@ -65,10 +66,20 @@ class IsTenantMember(BasePermission):
 
     The floor for anything gym-specific: being signed in is not enough, because
     a signed-in stranger is exactly the cross-tenant case.
+
+    A request that names no gym at all gets a 404 rather than a 403. These
+    routes only mean anything at a gym, so "which gym?" has no answer -- and a
+    403 would still confirm the route is there.
     """
 
     def has_permission(self, request, view):
-        return signed_in(request) and access(request).belongs
+        if not signed_in(request):
+            return False
+        from tenancy import context
+
+        if context.get() is None:
+            raise NotFound()
+        return access(request).belongs
 
 
 class IsAdminOrReadOnly(BasePermission):
@@ -87,6 +98,25 @@ class IsAdminOrReadOnly(BasePermission):
         if request.method in SAFE_METHODS:
             return current.belongs
         return current.is_admin
+
+
+class IsPlatformStaffOrReadOnly(BasePermission):
+    """Anyone who belongs here can read; only platform staff can write.
+
+    For the shared catalogues -- exercises and foods -- which carry no tenant
+    column, so every gym reads the same rows. "Is this user an admin here" is
+    the wrong question for them: a gym admin writing there writes into every
+    other gym at once. `is_staff` is the platform-level flag (it also gates
+    Django's /admin/), and staff need no standing at the gym in the URL,
+    because the rows are not that gym's.
+    """
+
+    def has_permission(self, request, view):
+        if not signed_in(request):
+            return False
+        if request.method in SAFE_METHODS:
+            return access(request).belongs
+        return request.user.is_staff
 
 
 class IsOwnerOrAdmin(BasePermission):

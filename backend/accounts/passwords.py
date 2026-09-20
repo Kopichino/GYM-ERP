@@ -29,6 +29,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from tenancy.email_identity import platform_sender
 
 from .models import User
+from core.security_log import security_event
 from .tokens import revoke_refresh_tokens
 from .views import _set_refresh_cookie
 
@@ -134,6 +135,7 @@ class PasswordResetView(APIView):
             or not user.is_active
             or not default_token_generator.check_token(user, token)
         ):
+            security_event("password_reset_link_invalid", request, warning=True)
             return Response(
                 {"detail": "This reset link is invalid or has expired. Ask for a new one."},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -147,6 +149,7 @@ class PasswordResetView(APIView):
         user.set_password(password)
         user.save(update_fields=["password"])
         revoke_refresh_tokens(user)
+        security_event("password_reset_completed", request, user=user.pk)
         return Response({"detail": "Your password has been changed. You can log in now."})
 
 
@@ -166,6 +169,7 @@ class PasswordChangeView(APIView):
     def post(self, request):
         user = request.user
         if not user.check_password(str(request.data.get("current_password") or "")):
+            security_event("password_change_failed", request, warning=True, user=user.pk)
             return Response(
                 {"current_password": ["That is not your current password."]},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -179,6 +183,7 @@ class PasswordChangeView(APIView):
         user.set_password(new_password)
         user.save(update_fields=["password"])
         revoke_refresh_tokens(user)
+        security_event("password_changed", request, user=user.pk)
 
         # Revoking ended this session's refresh token along with every other.
         # Issue a fresh one, so changing a password does not also log you out of

@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from tenancy.managers import TenantManager, UnscopedManager
@@ -42,6 +43,17 @@ class ClassSession(models.Model):
 
     class Meta:
         ordering = ["date", "start_time"]
+
+    def clean(self):
+        """A class ends after it starts, on its one date.
+
+        The API serializer holds the same rule. This is for saves that go
+        through Django's own model validation instead -- the Django admin's
+        form -- so a backwards class cannot be entered there either.
+        """
+        super().clean()
+        if self.start_time is not None and self.end_time is not None and self.end_time <= self.start_time:
+            raise ValidationError({"end_time": "A class has to end after it starts."})
 
     def __str__(self):
         return f"{self.title} - {self.date} {self.start_time}"

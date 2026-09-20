@@ -29,7 +29,8 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-from accounts.models import MembershipStatus, MemberProfile, Role, User
+from accounts import mfa
+from accounts.models import MembershipStatus, MemberProfile, MfaDevice, Role, User
 from tenancy import context
 from tenancy.models import Membership, Organisation, Tenant
 from announcements.models import Announcement
@@ -37,8 +38,7 @@ from attendance.models import CheckInMethod, CheckInOut
 from billing.models import DayPass, Discount, DiscountType, PaymentMethod, Plan
 from branding.models import Branding
 from billing.services import record_payment
-from commissions.models import CommissionBasis, CommissionRule
-from commissions.services import accrue_for_payment
+from commissions.models import CommissionRule
 from expenses.models import Expense, ExpenseCategory
 from gamification.models import Badge, GamificationProfile, MemberBadge, PersonalRecord
 from invoicing.models import Invoice
@@ -67,6 +67,11 @@ from workouts.models import (
 
 DEMO_DOMAIN = "ironcore.demo"
 PASSWORD = "IronDemo123!"
+#: One authenticator key shared by every demo account, printed at the end.
+#: Two-step sign-in is required, and a demo that stops at "set up your
+#: authenticator" for every role is not much of a demo. Published on purpose,
+#: exactly like the password above -- demo accounts only, never a real one.
+DEMO_MFA_SECRET = "JBSWY3DPEHPK3PXPIRONCOREDEMOKEY2"
 
 TODAY = date.today()
 
@@ -127,7 +132,6 @@ class Command(BaseCommand):
                 trainers = self._trainers()
                 members = self._members(trainers)
                 self._offers(plans)
-                self._commission_rules(trainers, plans)
                 self._billing(members, plans, admin)
                 self._invoices(members)
                 self._expenses(admin)
@@ -243,6 +247,8 @@ class Command(BaseCommand):
             address="12 Anchor Street\nAndheri West\nMumbai 400053",
             website="https://ironcore.demo",
             instagram="ironcore.gym",
+            # Read by the public website's footer, one row per line.
+            opening_hours="Monday to Friday: 5:30 - 23:00\nSaturday: 6:00 - 21:00\nSunday: 7:00 - 20:00",
             gstin="27AAAAA0000A1Z5",
             state="Maharashtra",
         )
@@ -303,6 +309,17 @@ class Command(BaseCommand):
             user=user,
             tenant=context.require(),
             role=role,
+        )
+        # Add DEMO_MFA_SECRET to an authenticator app once and it signs in as
+        # any demo account.
+        MfaDevice.objects.update_or_create(
+            user=user,
+            defaults={
+                "secret": DEMO_MFA_SECRET,
+                "pending_secret": "",
+                "confirmed_at": timezone.now(),
+                "last_used_step": None,
+            },
         )
         return user
 
@@ -427,34 +444,6 @@ class Command(BaseCommand):
             if created and plan_names:
                 discount.plans.set([plans[name] for name in plan_names if name in plans])
 
-    # ----------------------------------------------------------- commissions
-
-    def _commission_rules(self, trainers, plans):
-        """Rules must exist before the payments are recorded: entries accrue at
-        payment time, exactly as they will in production."""
-        if CommissionRule.objects.exists():
-            return
-        # A gym-wide floor, a per-trainer override, then the most specific
-        # trainer+plan rule -- so the resolver has something to choose between.
-        CommissionRule.objects.create(
-            trainer=None, plan=None, basis=CommissionBasis.PERCENT, rate=Decimal("5")
-        )
-        first_trainer = trainers[0][0]
-        CommissionRule.objects.create(
-            trainer=first_trainer, plan=None, basis=CommissionBasis.PERCENT, rate=Decimal("10")
-        )
-        if "Quarterly" in plans:
-            CommissionRule.objects.create(
-                trainer=first_trainer,
-                plan=plans["Quarterly"],
-                basis=CommissionBasis.FLAT,
-                rate=Decimal("750"),
-            )
-        if len(trainers) > 1:
-            CommissionRule.objects.create(
-                trainer=trainers[1][0], plan=None, basis=CommissionBasis.FLAT, rate=Decimal("400")
-            )
-
     # -------------------------------------------------------------- invoices
 
     def _invoices(self, members):
@@ -466,9 +455,6 @@ class Command(BaseCommand):
         )
         for payment in payments:
             issue_invoice(payment)
-            # Payments recorded before a rule existed would carry no commission;
-            # accrual is idempotent, so re-running this is safe.
-            accrue_for_payment(payment)
 
     # -------------------------------------------------------------- expenses
 
@@ -1312,6 +1298,9 @@ class Command(BaseCommand):
         out.write(self.style.SUCCESS(line))
         out.write("")
         out.write(f"  Every account below uses the password:  {PASSWORD}")
+        out.write(f"  ...and two-step sign-in with the authenticator key:  {DEMO_MFA_SECRET}")
+        out.write("  Add that key to any authenticator app once, or open this on a phone:")
+        out.write(f"    {mfa.provisioning_uri(DEMO_MFA_SECRET, 'demo accounts')}")
         out.write("")
 
         out.write(self.style.MIGRATE_HEADING("  ADMIN"))

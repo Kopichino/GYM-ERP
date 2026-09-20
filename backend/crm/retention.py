@@ -19,6 +19,7 @@ from attendance.models import CheckInOut
 from billing.services import get_latest_completed_payment
 
 from .models import RetentionPolicy
+from tenancy.people import members_here
 
 # Used when nobody has set a policy yet, so the feature is useful the first
 # time it is opened rather than empty until someone configures it.
@@ -68,7 +69,7 @@ def at_risk(for_access=None, on=None):
     on = on or timezone.localdate()
     limits = thresholds()
 
-    members = User.objects.filter(role=Role.MEMBER).select_related("profile")
+    members = members_here().select_related("profile")
     # A trainer sees only their own roster; an admin here sees the whole gym.
     if for_access is not None and not for_access.is_admin:
         members = members.filter(profile__trainer=for_access.user)

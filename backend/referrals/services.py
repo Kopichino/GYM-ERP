@@ -88,6 +88,42 @@ def claim(code, new_user):
     )
 
 
+def save_programme(serializer):
+    """Save a referral programme, keeping exactly one running per brand.
+
+    A new programme becomes the one running, and so does an old one switched
+    back on. The running one is retired first, in the same transaction -- the
+    one-running-offer index would otherwise stop the save with an IntegrityError.
+
+    The brand's row is locked for the length of it, and the decision is made
+    once the lock is held, against the programme as it is stored then. Two
+    admins starting an offer at the same moment queue rather than both finding
+    nothing to retire. And an edit that loaded the running offer just before
+    another admin replaced it sees that it was retired, instead of saving its
+    stale copy back as a second running offer.
+    """
+    from tenancy import context
+    from tenancy.models import Organisation
+
+    with transaction.atomic():
+        organisation_id = context.require().organisation_id
+        list(Organisation.objects.select_for_update().filter(pk=organisation_id))
+        instance = serializer.instance
+        if instance is not None:
+            # Loaded before the lock was taken; it may have been retired since.
+            instance.refresh_from_db(fields=["is_active"])
+        activate = instance is None or (
+            serializer.validated_data.get("is_active") is True and not instance.is_active
+        )
+        if activate:
+            running = ReferralProgram.objects.filter(is_active=True)
+            if instance is not None:
+                running = running.exclude(pk=instance.pk)
+            running.update(is_active=False)
+            return serializer.save(is_active=True)
+        return serializer.save()
+
+
 def grant_reward(referral, granted_by=None, days=None, notes=""):
     """Pays the referrer their free days.
 

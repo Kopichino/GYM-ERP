@@ -226,6 +226,9 @@ class DeviceAdminApiTests(TenantAPIMixin, APITestCase):
     def setUp(self):
         self.admin = make_user("admin", Role.ADMIN)
         self.member = make_user("member")
+        # The admin account endpoints reach only people enrolled at this gym, and
+        # the member is never the one authenticating -- so enrol them explicitly.
+        self.member_for(self.member, Role.MEMBER)
 
     def test_registering_a_device_returns_the_key_once(self):
         self.client.force_authenticate(self.admin)

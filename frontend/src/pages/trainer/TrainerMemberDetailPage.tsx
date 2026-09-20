@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { addLog, createSession, fetchExercises, fetchProgress, fetchSessions } from "../../api/workouts";
-import { fetchMyMembers } from "../../api/users";
+import { fetchMyMember, type TrainerMember } from "../../api/users";
 import BodyStatsPanel from "../../components/BodyStatsPanel";
 import DietPlanner from "../../components/DietPlanner";
 import ProgressChart from "../../components/ProgressChart";
@@ -17,19 +17,98 @@ import {
 } from "../../components/ui";
 import { railColor } from "../../lib/theme";
 
+/** Answers that mean "not one of your members" -- final, not worth retrying. */
+const NOT_YOURS = [403, 404];
+
+function statusOf(error: unknown) {
+  return (error as { response?: { status?: number } } | null)?.response?.status ?? 0;
+}
+
+function BackToMembers() {
+  return (
+    <Link
+      to="/trainer/members"
+      className="mb-4 inline-block text-sm text-[var(--color-text-muted)] hover:text-[var(--color-accent)]"
+    >
+      &#8249; Back to my members
+    </Link>
+  );
+}
+
+/**
+ * A trainer's page for one member.
+ *
+ * The member is looked up first, and nothing member-specific is shown until they
+ * come back. The page used to take the id straight from the URL and render the
+ * workout logger, body stats and diet planner for any number at all -- a member
+ * that did not exist, or was someone else's, got a working-looking form whose
+ * every save the server then refused.
+ */
 export default function TrainerMemberDetailPage() {
   const { memberId } = useParams();
   const id = Number(memberId);
-  const queryClient = useQueryClient();
+  // An id that cannot belong to anyone is not asked about at all.
+  const validId = Number.isInteger(id) && id > 0;
 
-  const { data: members } = useQuery({ queryKey: ["trainer", "members"], queryFn: fetchMyMembers });
-  const member = members?.find((m) => m.id === id);
+  const { data: member, isLoading, error } = useQuery({
+    queryKey: ["trainer", "members", id],
+    queryFn: () => fetchMyMember(id),
+    enabled: validId,
+    retry: (failures, err) => !NOT_YOURS.includes(statusOf(err)) && failures < 1,
+  });
+
+  if (!validId || NOT_YOURS.includes(statusOf(error))) {
+    return (
+      <div>
+        <PageHeader title="Member not found" subtitle="Nothing to log here." />
+        <BackToMembers />
+        <Card accent={railColor(1)}>
+          <EmptyState>
+            We couldn&apos;t find that member among the members assigned to you. They may have been
+            moved to another trainer, or the link may be wrong.
+          </EmptyState>
+        </Card>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <div>
+        <PageHeader title="Member" subtitle="Log sessions and track this member's progress." />
+        <BackToMembers />
+        <Card accent={railColor(0)}>
+          <LoadingState />
+        </Card>
+      </div>
+    );
+  }
+
+  if (error || !member) {
+    return (
+      <div>
+        <PageHeader title="Member" subtitle="Log sessions and track this member's progress." />
+        <BackToMembers />
+        <Card accent={railColor(1)}>
+          <ErrorState />
+        </Card>
+      </div>
+    );
+  }
+
+  return <MemberWorkspace member={member} />;
+}
+
+/** Everything a trainer does for one confirmed member. Mounted only once the
+ *  member has been found, so none of its reads or writes can go to anyone else. */
+function MemberWorkspace({ member }: { member: TrainerMember }) {
+  const id = member.id;
+  const queryClient = useQueryClient();
 
   const { data: exercises } = useQuery({ queryKey: ["exercises"], queryFn: fetchExercises });
   const { data: sessions, isLoading, isError } = useQuery({
     queryKey: ["sessions", id],
     queryFn: () => fetchSessions(id),
-    enabled: Number.isFinite(id),
   });
 
   const [exerciseId, setExerciseId] = useState<number | "">("");
@@ -73,19 +152,12 @@ export default function TrainerMemberDetailPage() {
     onSuccess: invalidate,
   });
 
-  const displayName = member
-    ? `${member.first_name} ${member.last_name}`.trim() || member.username
-    : "Member";
+  const displayName = `${member.first_name} ${member.last_name}`.trim() || member.username;
 
   return (
     <div>
       <PageHeader title={displayName} subtitle="Log sessions and track this member's progress." />
-      <Link
-        to="/trainer/members"
-        className="mb-4 inline-block text-sm text-[var(--color-text-muted)] hover:text-[var(--color-accent)]"
-      >
-        &#8249; Back to my members
-      </Link>
+      <BackToMembers />
 
       {isLoading ? (
         <Card accent={railColor(0)}>
@@ -96,7 +168,11 @@ export default function TrainerMemberDetailPage() {
           <ErrorState />
         </Card>
       ) : (
-        <div className="grid gap-6 md:grid-cols-2">
+        // One column below `md` is stated, not left implicit: an implicit
+        // column is as wide as its widest item's minimum, and the diet
+        // planner's week strip -- seven 104px day cards, built to scroll
+        // sideways -- made that 776px, pushing every card off a phone.
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <Card accent={railColor(2)}>
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
               Log a set

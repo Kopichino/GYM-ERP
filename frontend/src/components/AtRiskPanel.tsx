@@ -64,7 +64,15 @@ function CallAction({ member }: { member: AtRiskMember }) {
       >
         {member.phone}
       </a>
-      <button type="button" onClick={copy} className={ghostButtonClass}>
+      {/* Named for whose number it is. A list of several members otherwise has
+          a row of buttons that all read "Copy", and a screen reader cannot
+          tell one member's from the next. */}
+      <button
+        type="button"
+        onClick={copy}
+        aria-label={`${copied ? "Copied" : "Copy"} ${name}'s phone number`}
+        className={ghostButtonClass}
+      >
         {copied ? "Copied" : "Copy"}
       </button>
     </span>

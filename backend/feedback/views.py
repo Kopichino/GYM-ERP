@@ -1,5 +1,3 @@
-from datetime import date as date_cls
-
 from django.db import IntegrityError
 from rest_framework import status as http
 from rest_framework.decorators import action
@@ -8,7 +6,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
-from core.permissions import access, IsAdmin
+from core.dates import read_window
+from core.permissions import access, IsAdmin, IsTenantMember
 
 from . import nps
 from .models import DETRACTOR_TO, Survey, SurveyResponse, Trigger
@@ -17,12 +16,6 @@ from .serializers import (
     SurveyResponseSerializer,
     SurveySerializer,
 )
-
-
-def _parse_date(value, fallback=None):
-    if not value:
-        return fallback
-    return date_cls.fromisoformat(value)
 
 
 class SurveyViewSet(ModelViewSet):
@@ -106,7 +99,10 @@ class SurveyResponseViewSet(ModelViewSet):
     everyone's and writes none."""
 
     serializer_class = SurveyResponseSerializer
-    permission_classes = [IsAuthenticated]
+    # Standing at the gym in the URL, not just a signed-in account: without it a
+    # person from another gym could read this gym's (empty) list for them and
+    # file new rows under a gym they do not belong to.
+    permission_classes = [IsTenantMember]
     # No PATCH or DELETE: an answer that can be edited afterwards is not a
     # measurement of anything.
     http_method_names = ["get", "post", "head", "options"]
@@ -145,8 +141,10 @@ class NpsView(APIView):
     permission_classes = [IsAdmin]
 
     def get(self, request):
-        start = _parse_date(request.query_params.get("from"))
-        end = _parse_date(request.query_params.get("to"))
+        # A malformed date is a 400 on its parameter and a `to` before `from`
+        # is refused -- the way every report reads its window -- rather than
+        # a 500 or an empty summary.
+        start, end = read_window(request.query_params)
         survey = request.query_params.get("survey") or None
         result = nps.summary(start, end, survey)
         result["trend"] = nps.trend(6, survey)

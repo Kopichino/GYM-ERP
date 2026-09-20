@@ -1,12 +1,8 @@
 from rest_framework import serializers
 
-from .models import GalleryPost
+from core.uploads import validate_gallery_media
 
-MAX_UPLOAD_BYTES = 20 * 1024 * 1024  # 20MB -- keeps Cloudinary's free bandwidth/storage cap safe
-ALLOWED_CONTENT_TYPES = {
-    "image": {"image/jpeg", "image/png", "image/webp", "image/gif"},
-    "video": {"video/mp4", "video/quicktime", "video/webm"},
-}
+from .models import GalleryPost
 
 
 class GalleryPostSerializer(serializers.ModelSerializer):
@@ -28,13 +24,12 @@ class GalleryPostSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         media = attrs.get("media")
-        media_type = attrs.get("media_type")
-        if media and media.size > MAX_UPLOAD_BYTES:
-            raise serializers.ValidationError("File too large (max 20MB).")
-        if media and media_type:
-            content_type = getattr(media, "content_type", "")
-            if content_type not in ALLOWED_CONTENT_TYPES.get(media_type, set()):
-                raise serializers.ValidationError(
-                    f"File type {content_type!r} doesn't match declared media_type {media_type!r}."
-                )
+        if media:
+            # The declared media type decides which formats are acceptable; the
+            # file's own bytes decide whether it is one. The browser's content
+            # type decides nothing -- see core.uploads.
+            try:
+                validate_gallery_media(media, attrs.get("media_type"))
+            except serializers.ValidationError as exc:
+                raise serializers.ValidationError({"media": exc.detail}) from None
         return attrs

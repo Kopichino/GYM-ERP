@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { fetchMe, login, signup } from "../api/auth";
 import AuthLayout from "../components/layout/AuthLayout";
+import MfaSignIn, { type PendingSignIn } from "../components/mfa/MfaSignIn";
 import { Button, ErrorText, Input } from "../components/ui";
 import { useBranding } from "../hooks/useBranding";
 import { useAuthStore } from "../store/authStore";
@@ -30,6 +31,8 @@ export default function SignupPage() {
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  // A new account meets two-step setup straight after it is created.
+  const [pending, setPending] = useState<PendingSignIn | null>(null);
   const setAuth = useAuthStore((s) => s.setAuth);
   const navigate = useNavigate();
   const gymName = useBranding()?.name || "IRONCORE";
@@ -38,17 +41,26 @@ export default function SignupPage() {
     return (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [key]: e.target.value }));
   }
 
+  async function finish(access: string) {
+    useAuthStore.getState().setAccessToken(access);
+    const user = await fetchMe();
+    setAuth(access, user);
+    navigate("/dashboard");
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
       await signup(form);
-      const access = await login({ username: form.username, password: form.password });
-      useAuthStore.getState().setAccessToken(access);
-      const user = await fetchMe();
-      setAuth(access, user);
-      navigate("/dashboard");
+      const result = await login({ username: form.username, password: form.password });
+      if (result.kind === "session") {
+        await finish(result.access);
+      } else {
+        setForm((f) => ({ ...f, password: "" }));
+        setPending(result);
+      }
     } catch (err: unknown) {
       const message =
         (err as { response?: { data?: Record<string, string[]> } })?.response?.data;
@@ -56,6 +68,11 @@ export default function SignupPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (pending) {
+    // The account exists by now, so starting again means logging in to it.
+    return <MfaSignIn pending={pending} onSignedIn={finish} onRestart={() => navigate("/login")} />;
   }
 
   return (

@@ -11,6 +11,7 @@ from .models import Message
 from .serializers import MessageSerializer
 from .services import handle_incoming, send
 from .whatsapp import is_configured, parse_incoming, verify_signature, verify_subscription
+from core.security_log import security_event
 
 
 class WhatsAppStatusView(APIView):
@@ -72,6 +73,7 @@ class WhatsAppWebhookView(APIView):
 
     def post(self, request):
         if not verify_signature(request.body, request.headers.get("X-Hub-Signature-256", "")):
+            security_event("webhook_signature_invalid", request, warning=True, target="whatsapp")
             return Response({"detail": "Bad signature."}, status=400)
 
         handled = 0

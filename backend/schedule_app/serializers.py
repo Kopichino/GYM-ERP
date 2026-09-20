@@ -46,6 +46,24 @@ class ClassSessionSerializer(serializers.ModelSerializer):
             "my_status",
         ]
 
+    def validate(self, attrs):
+        """A class ends after it starts, on its one date -- there are no
+        overnight classes, and a class that ends when it starts is no class.
+
+        Checked against the stored row as well as the request, so a PATCH that
+        moves only one of the two times is held to the same rule. A PATCH that
+        touches neither is left alone, so an old row saved before this rule can
+        still have its other details corrected.
+        """
+        if "start_time" in attrs or "end_time" in attrs:
+            start = attrs.get("start_time", getattr(self.instance, "start_time", None))
+            end = attrs.get("end_time", getattr(self.instance, "end_time", None))
+            if start is not None and end is not None and end <= start:
+                raise serializers.ValidationError(
+                    {"end_time": "A class has to end after it starts."}
+                )
+        return attrs
+
     def validate_trainer(self, trainer):
         """Only someone who trains at this gym can run one of its classes.
 

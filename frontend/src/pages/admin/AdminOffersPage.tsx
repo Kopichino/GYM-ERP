@@ -6,7 +6,7 @@ import {
   createDiscount,
   deleteDiscount,
   fetchDiscounts,
-  fetchPlans,
+  fetchSellablePlans,
   updateDiscount,
   type Discount,
   type DiscountType,
@@ -67,7 +67,8 @@ export default function AdminOffersPage() {
     queryKey: ["admin", "discounts"],
     queryFn: fetchDiscounts,
   });
-  const { data: plans } = useQuery({ queryKey: ["plans"], queryFn: fetchPlans });
+  // Only plans on sale: an offer limited to a retired plan could never be used.
+  const { data: plans } = useQuery({ queryKey: ["plans", "sellable"], queryFn: fetchSellablePlans });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["admin", "discounts"] });
 

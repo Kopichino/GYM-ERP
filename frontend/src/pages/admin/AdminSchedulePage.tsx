@@ -2,7 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { fetchUsers } from "../../api/users";
 import { createClassSession, deleteClassSession, fetchClassSessions } from "../../api/schedule";
-import { Button, Card, EmptyState, ErrorState, Input, LoadingState, Select } from "../../components/ui";
+import { Button, Card, EmptyState, ErrorState, ErrorText, Input, LoadingState, Select } from "../../components/ui";
+import { serverMessage } from "../../lib/apiError";
+import { classTimeProblem } from "../../lib/classTimes";
 import { railColor } from "../../lib/theme";
 import { askConfirm } from "../../store/confirmStore";
 
@@ -27,6 +29,9 @@ export default function AdminSchedulePage() {
     capacity: "",
     description: "",
   });
+
+  // Said as soon as both times are in, rather than after a round trip.
+  const timeProblem = classTimeProblem(form.start_time, form.end_time);
 
   const create = useMutation({
     mutationFn: () =>
@@ -59,6 +64,7 @@ export default function AdminSchedulePage() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            if (timeProblem) return;
             create.mutate();
           }}
           className="flex flex-col gap-3"
@@ -82,6 +88,7 @@ export default function AdminSchedulePage() {
           </Select>
           <Input
             type="date"
+            aria-label="Date"
             value={form.date}
             onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
             required
@@ -89,26 +96,33 @@ export default function AdminSchedulePage() {
           <div className="flex gap-3">
             <Input
               type="time"
+              aria-label="Start time"
               value={form.start_time}
               onChange={(e) => setForm((f) => ({ ...f, start_time: e.target.value }))}
               required
             />
             <Input
               type="time"
+              aria-label="End time"
+              aria-invalid={Boolean(timeProblem)}
               value={form.end_time}
               onChange={(e) => setForm((f) => ({ ...f, end_time: e.target.value }))}
               required
             />
           </div>
+          {timeProblem && <ErrorText>{timeProblem}</ErrorText>}
           <Input
             type="number"
             placeholder="Capacity (optional)"
             value={form.capacity}
             onChange={(e) => setForm((f) => ({ ...f, capacity: e.target.value }))}
           />
-          <Button type="submit" disabled={create.isPending}>
+          <Button type="submit" disabled={create.isPending || Boolean(timeProblem)}>
             {create.isPending ? "Saving..." : "Add to schedule"}
           </Button>
+          {create.isError && (
+            <ErrorText>{serverMessage(create.error, "Could not add that class. Check the date and times.")}</ErrorText>
+          )}
         </form>
       </Card>
 

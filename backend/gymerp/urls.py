@@ -28,7 +28,6 @@ urlpatterns = admin_patterns + [
     path("api/crm/", include("crm.urls")),
     path("api/expenses/", include("expenses.urls")),
     path("api/invoices/", include("invoicing.urls")),
-    path("api/commissions/", include("commissions.urls")),
     path("api/reports/", include("reports.urls")),
     path("api/nutrition/", include("nutrition.urls")),
     path("api/referrals/", include("referrals.urls")),

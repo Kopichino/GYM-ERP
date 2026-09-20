@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
-import { fetchInvoices, fetchMyPayments, fetchMySubscription, openInvoicePdf } from "../api/billing";
+import { fetchMyPayments, fetchMySubscription, openInvoicePdf } from "../api/billing";
 import RenewOnlinePanel from "../components/RenewOnlinePanel";
 import {
   AnimatedNumber,
@@ -37,16 +37,14 @@ export default function BillingPage() {
     isError: subError,
   } = useQuery({ queryKey: ["billing", "my-subscription"], queryFn: fetchMySubscription });
 
+  // The whole history, not its first page: a member of two years has more than
+  // twenty payments. Each row carries its own invoice, so every one can offer
+  // its PDF; payments recorded before invoicing existed have none.
   const {
     data: payments,
     isLoading: paymentsLoading,
     isError: paymentsError,
   } = useQuery({ queryKey: ["billing", "my-payments"], queryFn: fetchMyPayments });
-
-  // Invoices are keyed by payment so each history row can offer its own PDF.
-  // Payments recorded before invoicing existed simply have no entry here.
-  const { data: invoices } = useQuery({ queryKey: ["invoices", "mine"], queryFn: () => fetchInvoices() });
-  const invoiceByPayment = new Map((invoices ?? []).map((i) => [i.payment, i]));
 
   return (
     <div>
@@ -118,33 +116,33 @@ export default function BillingPage() {
                 </tr>
               </thead>
               <motion.tbody initial="hidden" animate="visible" variants={staggerContainer(0.04)}>
-                {payments?.map((p) => (
-                  <motion.tr key={p.id} variants={fadeUp} className={tableRowClass}>
-                    <td className={tableCellClass}>{new Date(p.paid_date).toLocaleDateString()}</td>
-                    <td className={tableCellClass}>{p.plan_name}</td>
-                    <td className={tableCellClass}>{p.amount}</td>
-                    <td className={tableCellClass}>{p.method.replace("_", " ")}</td>
-                    <td className={tableCellClass}>
-                      <StatusBadge status={p.status} />
-                    </td>
-                    <td className={tableCellClass}>
-                      {new Date(p.period_start).toLocaleDateString()} -{" "}
-                      {new Date(p.period_end).toLocaleDateString()}
-                    </td>
-                    <td className={tableCellClass}>
-                      {invoiceByPayment.has(p.id) ? (
-                        <Button
-                          variant="secondary"
-                          onClick={() => openInvoicePdf(invoiceByPayment.get(p.id)!.id)}
-                        >
-                          {invoiceByPayment.get(p.id)!.number}
-                        </Button>
-                      ) : (
-                        <span className="text-[var(--color-text-muted)]">-</span>
-                      )}
-                    </td>
-                  </motion.tr>
-                ))}
+                {payments?.map((p) => {
+                  const invoice = p.invoice;
+                  return (
+                    <motion.tr key={p.id} variants={fadeUp} className={tableRowClass}>
+                      <td className={tableCellClass}>{new Date(p.paid_date).toLocaleDateString()}</td>
+                      <td className={tableCellClass}>{p.plan_name}</td>
+                      <td className={tableCellClass}>{p.amount}</td>
+                      <td className={tableCellClass}>{p.method.replace("_", " ")}</td>
+                      <td className={tableCellClass}>
+                        <StatusBadge status={p.status} />
+                      </td>
+                      <td className={tableCellClass}>
+                        {new Date(p.period_start).toLocaleDateString()} -{" "}
+                        {new Date(p.period_end).toLocaleDateString()}
+                      </td>
+                      <td className={tableCellClass}>
+                        {invoice ? (
+                          <Button variant="secondary" onClick={() => openInvoicePdf(invoice.id)}>
+                            {invoice.number}
+                          </Button>
+                        ) : (
+                          <span className="text-[var(--color-text-muted)]">-</span>
+                        )}
+                      </td>
+                    </motion.tr>
+                  );
+                })}
               </motion.tbody>
             </table>
           </div>

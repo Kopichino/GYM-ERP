@@ -5,7 +5,7 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 from attendance.services import streaks, visit_dates
-from core.permissions import access, IsAdminOrReadOnly
+from core.permissions import access, IsAdminOrReadOnly, IsTenantMember
 
 from . import awards, celebrations, leaderboard, records
 from .models import Badge, GamificationProfile
@@ -43,7 +43,7 @@ class MyAchievementsView(APIView):
     logging a set fail.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsTenantMember]
 
     def get(self, request):
         member = request.user
@@ -75,7 +75,7 @@ class MyAchievementsView(APIView):
 class MyRecordsView(APIView):
     """The member's own PRs, rebuilt from their logs on read."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsTenantMember]
 
     def get(self, request):
         found = records.sync_records(request.user)
@@ -93,7 +93,7 @@ class LeaderboardView(APIView):
     of each lift -- see `leaderboard.py` for why that matters.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsTenantMember]
 
     def get(self, request):
         # The caller's own records are refreshed so a PR set this morning is on
@@ -119,7 +119,7 @@ class LeaderboardView(APIView):
 class GamificationProfileView(APIView):
     """The member's own leaderboard opt-in."""
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsTenantMember]
 
     def get(self, request):
         profile, _ = GamificationProfile.objects.get_or_create(user=request.user)
@@ -142,7 +142,7 @@ class PRCelebrationView(APIView):
     lookup once there is nothing to celebrate.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsTenantMember]
 
     def get(self, request):
         return Response(
@@ -166,7 +166,7 @@ class MyStandingView(APIView):
     give people away.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsTenantMember]
 
     def get(self, request):
         exercise = request.query_params.get("exercise")

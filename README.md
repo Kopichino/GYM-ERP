@@ -120,6 +120,8 @@ Key ones:
 | `GYM_NAME` / `GYM_GSTIN` / `GYM_STATE` / `GST_RATE` | backend | Printed on invoices. The branding page overrides these once filled in; `GYM_STATE` decides CGST+SGST vs IGST |
 | `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` / `DEFAULT_FROM_EMAIL` | backend | Outgoing member email. Unset = mail is printed to the console instead of sent |
 | `FRONTEND_URL` | backend | Where password-reset emails link to. Must be the deployed frontend's origin in production, or members get a link to localhost |
+| `MFA_REQUIRED` | backend | Default `True`: every account -- member, trainer, admin -- signs in with a code from an authenticator app, and sets one up the first time it signs in. `False` stops requiring it; accounts that already set it up keep using it |
+| `MFA_ISSUER` | backend | The name authenticator apps list these accounts under. Default `IRONCORE` |
 | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` / `RAZORPAY_WEBHOOK_SECRET` | backend | Online payment. Unset = the member portal doesn't offer it |
 | `WHATSAPP_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` / `WHATSAPP_VERIFY_TOKEN` / `WHATSAPP_APP_SECRET` | backend | WhatsApp Business. Unset = nothing is sent and the assistant never replies |
 | `ANTHROPIC_API_KEY` / `ASSISTANT_MODEL` | backend | Optional. Lets the WhatsApp assistant answer questions its own matcher doesn't recognise |
@@ -172,6 +174,7 @@ than stored, so two numbers can never disagree:
 | Classes and bookings | `schedule_app` | capacity held under `select_for_update` |
 | Announcements, gallery | `announcements`, `gallery` | |
 | White-label branding | `branding` | name, logo and colours applied at runtime |
+| Public website | `frontend/src/pages/LandingPage.tsx`, `components/site/` | the homepage at `/`. Prices come live from the gym's active **Plans** (`GET /billing/public/plans/`, signed out, active plans only), and the name, logo, accent colour, address, phone, email, Instagram and opening hours from **Branding** -- so an edit in the portal is on the site at the next visit. A plan's description lines become its feature list. The story, programmes, testimonials and photos in `lib/siteContent.ts` are placeholder copy to replace |
 | Import from other gym software | `dataimport` | preview-then-commit, alias-matched headers |
 | Retention / at-risk members | `crm` | thresholds are a row; who is at risk is read off check-in history every time, never flagged |
 | Badges, milestones, personal records | `gamification` | criteria evaluated against live counts on read; lift badges name an exercise so "100kg" means something; PRs snapshot bodyweight so the ratio stays true |
@@ -324,8 +327,12 @@ python manage.py seed_demo --wipe   # remove it again
 
 Creates an admin, two trainers and five members (each showing a different
 state -- active, lapsed, paused, brand new), all with the password
-`IronDemo123!`. The command prints the account list and a one-time device key
-when it finishes.
+`IronDemo123!`. Two-step sign-in is required, so the demo accounts also share one
+published authenticator key, `JBSWY3DPEHPK3PXPIRONCOREDEMOKEY2`: add it to an
+authenticator app once and it gives the code for any of them. That is for demo
+accounts only -- a real account's key is made when it sets up two-step sign-in
+and is never shown again. The command prints the account list, the key and a
+one-time device key when it finishes.
 
 ### Scheduled commands
 
@@ -354,6 +361,15 @@ the actual boundary.
 | `trainer` | Assigned members (view + log workouts for them), own classes, own account |
 | `admin` | Everything in the admin dashboard, including data import and Excel export |
 
+- Every role signs in with two-step sign-in (`MFA_REQUIRED`, on by default): the
+  password step returns a short-lived signed token instead of a session, which
+  `/api/auth/mfa/login/verify/` exchanges for a TOTP or recovery code -- or, for
+  an account with no authenticator yet, `/login/setup/` and `/login/confirm/`
+  enrol one first. The refresh endpoint also refuses to renew a session for an
+  account with no authenticator while it is required, so existing sessions do
+  not outlive the switch. Keys live in `accounts.MfaDevice`; recovery codes are
+  stored hashed. Members and trainers manage theirs from their profile, admins
+  from **My Account**, and an admin can reset someone's from Members or Trainers.
 - Self-signup always creates a `member`; only an admin can promote an account.
 - `is_staff` is derived automatically from `role == admin` and exists only so
   Django's own `/admin/` site keeps working. Branch on `role` in app code.

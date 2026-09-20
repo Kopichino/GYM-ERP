@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
-from core.permissions import access, IsAdmin
+from core.permissions import access, IsAdmin, IsTenantMember
 from crm.models import Enquiry, EnquiryStatus
 
 from .models import Referral, ReferralProgram, ReferralStatus
@@ -14,12 +14,16 @@ from .serializers import (
     ReferralProgramSerializer,
     ReferralSerializer,
 )
-from .services import ReferralError, code_for, grant_reward
+from .services import ReferralError, code_for, grant_reward, save_programme
 
 
 class ReferralProgramViewSet(ModelViewSet):
     """What the gym is offering. Admin-only to change; the member-facing
-    summary reads the active one for everybody."""
+    summary reads the active one for everybody.
+
+    The admin page edits the running offer in place (PATCH). Creating a
+    programme starts a new offer and retires the one running.
+    """
 
     serializer_class = ReferralProgramSerializer
     permission_classes = [IsAdmin]
@@ -32,16 +36,19 @@ class ReferralProgramViewSet(ModelViewSet):
     def perform_create(self, serializer):
         # Only one programme runs at a time -- a partial unique index enforces
         # it, so the previous one is retired in the same transaction.
-        with transaction.atomic():
-            ReferralProgram.objects.filter(is_active=True).update(is_active=False)
-            serializer.save(is_active=True)
+        save_programme(serializer)
+
+    def perform_update(self, serializer):
+        # Switching an old offer back on retires whichever is running. Whether
+        # this edit does that is decided inside save_programme, under its lock.
+        save_programme(serializer)
 
 
 class ReferralViewSet(ModelViewSet):
     """A member raises referrals and sees their own; an admin sees the lot."""
 
     serializer_class = ReferralSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsTenantMember]
 
     def get_queryset(self):
         queryset = Referral.objects.select_related(

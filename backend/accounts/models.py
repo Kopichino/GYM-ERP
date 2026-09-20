@@ -92,3 +92,54 @@ class MemberProfile(models.Model):
 
     def __str__(self):
         return f"Profile: {self.user}"
+
+
+class MfaDevice(models.Model):
+    """The authenticator app this person signs in with.
+
+    One per account rather than one per gym: like the password, two-step
+    sign-in guards the person, who may belong to several gyms. `secret` is only
+    live once `confirmed_at` is set. A new or replacement key waits in
+    `pending_secret` until the person proves their app produces the right code,
+    so a mistyped setup can never lock them out of a key that already works.
+
+    Unlike a password, the key cannot be hashed -- the server has to compute
+    the same codes the phone does -- so it is stored as the app needs it, and
+    this table must be kept out of exports and logs.
+    """
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="mfa_device")
+    secret = models.CharField(max_length=64, blank=True)
+    pending_secret = models.CharField(max_length=64, blank=True)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+    #: The last time step a code was accepted for, so a code cannot be replayed
+    #: inside its own half-minute.
+    last_used_step = models.BigIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Two-step sign-in: {self.user}"
+
+    @property
+    def is_confirmed(self):
+        return self.confirmed_at is not None and bool(self.secret)
+
+
+class MfaRecoveryCode(models.Model):
+    """A single-use way in for someone who has lost their phone.
+
+    Stored hashed. Issued ten at a time and shown exactly once; issuing a new
+    set deletes the old one, so a sheet of codes left in a drawer stops working.
+    """
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="mfa_recovery_codes")
+    code_hash = models.CharField(max_length=64)
+    used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "code_hash"], name="recovery_code_unique_per_user"
+            ),
+        ]
