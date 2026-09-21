@@ -17,7 +17,6 @@ from .services import EXPIRY_WINDOWS, expiring_members, send_expiry_reminders
 from core.testing import TenantAPIMixin, enrol
 
 User = get_user_model()
-TODAY = timezone.localdate()
 
 
 def make_member(username, email=None):
@@ -37,13 +36,17 @@ class ExpiryReminderTests(TenantAPIMixin, TestCase):
     only thing stored."""
 
     def setUp(self):
+        # Taken per test, not once at import. The runner imports every module
+        # at the start of a long run, so a run that crossed midnight handed these
+        # tests yesterday while the sweep worked from the real today.
+        self.today = timezone.localdate()
         self.plan = Plan.objects.create(
             name="Monthly", price=Decimal("1500"), duration_days=30
         )
 
     def pay_expiring_in(self, member, days):
         """Backdates a payment so its period ends `days` from today."""
-        paid_on = TODAY + timedelta(days=days) - timedelta(days=self.plan.duration_days)
+        paid_on = self.today + timedelta(days=days) - timedelta(days=self.plan.duration_days)
         return record_payment(
             member=member,
             plan=self.plan,
@@ -82,7 +85,7 @@ class ExpiryReminderTests(TenantAPIMixin, TestCase):
         send_expiry_reminders()
 
         # Six days pass; the same expiry is now one day away.
-        later = TODAY + timedelta(days=6)
+        later = self.today + timedelta(days=6)
         sent, _ = send_expiry_reminders(on=later)
         self.assertEqual(sent, 1)
         self.assertEqual(len(mail.outbox), 2)
@@ -91,9 +94,9 @@ class ExpiryReminderTests(TenantAPIMixin, TestCase):
         self.assertEqual(NotificationLog.objects.count(), 2)
         self.assertEqual(
             sorted(NotificationLog.objects.values_list("subject_date", flat=True)),
-            sorted([TODAY, later]),
+            sorted([self.today, later]),
         )
-        self.assertEqual(payment.period_end, TODAY + timedelta(days=7))
+        self.assertEqual(payment.period_end, self.today + timedelta(days=7))
 
     def test_renewing_takes_a_member_off_the_list(self):
         member = make_member("renewer")
@@ -139,6 +142,8 @@ class ExpiryReminderTests(TenantAPIMixin, TestCase):
 
 class ExpiredNoticeTests(TenantAPIMixin, TestCase):
     def setUp(self):
+        # Per test, for the reason given in ExpiryReminderTests.setUp.
+        self.today = timezone.localdate()
         self.plan = Plan.objects.create(
             name="Monthly", price=Decimal("1500"), duration_days=30
         )
@@ -149,7 +154,7 @@ class ExpiredNoticeTests(TenantAPIMixin, TestCase):
             plan=self.plan,
             amount=self.plan.price,
             method=PaymentMethod.CASH,
-            paid_date=TODAY - timedelta(days=31),
+            paid_date=self.today - timedelta(days=31),
         )
 
     def test_the_day_after_expiry_they_get_one_notice(self):
@@ -163,7 +168,7 @@ class ExpiredNoticeTests(TenantAPIMixin, TestCase):
     def test_the_notice_is_not_repeated_the_following_day(self):
         send_expiry_reminders()
         mail.outbox.clear()
-        self.assertEqual(send_expiry_reminders(on=TODAY + timedelta(days=1))[0], 0)
+        self.assertEqual(send_expiry_reminders(on=self.today + timedelta(days=1))[0], 0)
         self.assertEqual(len(mail.outbox), 0)
 
 
@@ -178,7 +183,7 @@ class SendRemindersCommandTests(TenantAPIMixin, TestCase):
             plan=self.plan,
             amount=self.plan.price,
             method=PaymentMethod.CASH,
-            paid_date=TODAY - timedelta(days=29),  # ends tomorrow
+            paid_date=timezone.localdate() - timedelta(days=29),  # ends tomorrow
         )
 
     def test_dry_run_sends_nothing(self):

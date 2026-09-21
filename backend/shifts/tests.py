@@ -1,4 +1,4 @@
-from datetime import time, timedelta
+from datetime import datetime, time, timedelta
 
 from django.contrib.auth import get_user_model
 from django.db.utils import IntegrityError
@@ -13,7 +13,6 @@ from .models import Position, Shift
 from .services import ShiftError, on_floor, save_shift
 
 User = get_user_model()
-TODAY = timezone.localdate()
 
 
 def make_user(username, role=Role.TRAINER):
@@ -26,13 +25,17 @@ def make_user(username, role=Role.TRAINER):
 
 class ShiftRuleTests(TenantAPIMixin, APITestCase):
     def setUp(self):
+        # Taken per test, not once at import. The runner imports every module
+        # at the start of a long run, so a run that crossed midnight handed these
+        # tests yesterday while the views filtered on the real today.
+        self.today = timezone.localdate()
         self.ravi = make_user("ravi")
         self.meera = make_user("meera")
 
     def add(self, staff, start, end, date=None, position=Position.FLOOR):
         return save_shift(
             staff=staff,
-            date=date or TODAY,
+            date=date or self.today,
             start_time=time(start),
             end_time=time(end),
             position=position,
@@ -61,7 +64,7 @@ class ShiftRuleTests(TenantAPIMixin, APITestCase):
 
     def test_the_same_person_can_work_the_same_hours_on_another_day(self):
         self.add(self.ravi, 6, 14)
-        self.add(self.ravi, 6, 14, date=TODAY + timedelta(days=1))
+        self.add(self.ravi, 6, 14, date=self.today + timedelta(days=1))
         self.assertEqual(Shift.objects.filter(staff=self.ravi).count(), 2)
 
     def test_a_shift_that_ends_before_it_starts_is_refused(self):
@@ -72,14 +75,14 @@ class ShiftRuleTests(TenantAPIMixin, APITestCase):
         """The service check is convenience; the constraint is the guarantee."""
         with self.assertRaises(IntegrityError):
             Shift.objects.create(
-                staff=self.ravi, date=TODAY, start_time=time(20), end_time=time(6)
+                staff=self.ravi, date=self.today, start_time=time(20), end_time=time(6)
             )
 
     def test_editing_a_shift_does_not_clash_with_itself(self):
         shift = self.add(self.ravi, 6, 14)
         save_shift(
             staff=self.ravi,
-            date=TODAY,
+            date=self.today,
             start_time=time(7),
             end_time=time(15),
             position=Position.FLOOR,
@@ -101,24 +104,35 @@ class OnFloorTests(TenantAPIMixin, APITestCase):
         self.meera = make_user("onfloormeera")
 
     def test_only_whoever_is_rostered_right_now(self):
-        now = timezone.localtime()
-        # A window that certainly contains now, and one that certainly doesn't.
+        # A fixed instant, not the wall clock. The old "window that certainly
+        # contains now" (00:01-23:59) did not in the minute either side of
+        # midnight, which is exactly when a long CI run reached this test.
+        at = timezone.make_aware(datetime(2026, 9, 16, 12, 0))
         save_shift(
             staff=self.ravi,
-            date=now.date(),
-            start_time=time(0, 1),
-            end_time=time(23, 59),
+            date=at.date(),
+            start_time=time(9),
+            end_time=time(17),
+            position=Position.FLOOR,
+        )
+        # Off the floor at that instant: finished earlier the same day, and the
+        # same hours on the following day.
+        save_shift(
+            staff=self.meera,
+            date=at.date(),
+            start_time=time(6),
+            end_time=time(11),
             position=Position.FLOOR,
         )
         save_shift(
             staff=self.meera,
-            date=now.date() + timedelta(days=1),
+            date=at.date() + timedelta(days=1),
             start_time=time(9),
             end_time=time(17),
             position=Position.FLOOR,
         )
 
-        names = [s.staff.username for s in on_floor(now)]
+        names = [s.staff.username for s in on_floor(at)]
         self.assertEqual(names, ["onfloorravi"])
 
     def test_nobody_on_is_an_empty_answer_not_an_error(self):
@@ -127,6 +141,8 @@ class OnFloorTests(TenantAPIMixin, APITestCase):
 
 class ShiftApiTests(TenantAPIMixin, APITestCase):
     def setUp(self):
+        # Per test, for the reason given in ShiftRuleTests.setUp.
+        self.today = timezone.localdate()
         self.admin = make_user("rotaadmin", Role.ADMIN)
         self.trainer = make_user("rotacoach")
         self.member = make_user("rotamember", Role.MEMBER)
@@ -134,7 +150,7 @@ class ShiftApiTests(TenantAPIMixin, APITestCase):
     def payload(self, staff, start="06:00", end="14:00", date=None):
         return {
             "staff": staff.id,
-            "date": str(date or TODAY),
+            "date": str(date or self.today),
             "start_time": start,
             "end_time": end,
             "position": Position.FLOOR,
@@ -171,12 +187,12 @@ class ShiftApiTests(TenantAPIMixin, APITestCase):
         self.client.force_authenticate(self.admin)
         self.client.post("/api/shifts/", self.payload(self.trainer))
         self.client.post(
-            "/api/shifts/", self.payload(self.admin, date=TODAY + timedelta(days=1))
+            "/api/shifts/", self.payload(self.admin, date=self.today + timedelta(days=1))
         )
         # A shift that has already been and gone.
         Shift.objects.create(
             staff=self.trainer,
-            date=TODAY - timedelta(days=3),
+            date=self.today - timedelta(days=3),
             start_time=time(6),
             end_time=time(14),
         )
@@ -184,17 +200,17 @@ class ShiftApiTests(TenantAPIMixin, APITestCase):
         self.client.force_authenticate(self.trainer)
         resp = self.client.get("/api/shifts/mine/")
         self.assertEqual(len(resp.data), 1)
-        self.assertEqual(resp.data[0]["date"], str(TODAY))
+        self.assertEqual(resp.data[0]["date"], str(self.today))
 
     def test_the_rota_can_be_read_a_week_at_a_time(self):
         self.client.force_authenticate(self.admin)
         self.client.post("/api/shifts/", self.payload(self.trainer))
         self.client.post(
-            "/api/shifts/", self.payload(self.trainer, date=TODAY + timedelta(days=10))
+            "/api/shifts/", self.payload(self.trainer, date=self.today + timedelta(days=10))
         )
 
         resp = self.client.get(
-            f"/api/shifts/?from={TODAY}&to={TODAY + timedelta(days=6)}"
+            f"/api/shifts/?from={self.today}&to={self.today + timedelta(days=6)}"
         )
         self.assertEqual(resp.data["count"], 1)
 

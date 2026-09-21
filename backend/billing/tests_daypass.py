@@ -15,7 +15,6 @@ from attendance.services import AttendanceError, open_visit, toggle_guest_visit
 from .models import DayPass
 
 User = get_user_model()
-TODAY = timezone.localdate()
 
 
 def make_user(username, role=Role.MEMBER):
@@ -95,6 +94,10 @@ class DayPassVisitTests(TenantAPIMixin, APITestCase):
 
 class DayPassApiTests(TenantAPIMixin, APITestCase):
     def setUp(self):
+        # Taken per test, not once at import. The runner imports every module
+        # at the start of a long run, so a run that crossed midnight handed these
+        # tests yesterday while new passes defaulted to the real today.
+        self.today = timezone.localdate()
         self.admin = make_user("passadmin", Role.ADMIN)
         self.member = make_user("nosypassmember")
         self.client.force_authenticate(self.admin)
@@ -124,7 +127,7 @@ class DayPassApiTests(TenantAPIMixin, APITestCase):
         self.assertEqual(second.data["action"], "out")
 
     def test_a_pass_for_another_day_is_refused(self):
-        stale = DayPass.objects.create(name="Yesterday", valid_on=TODAY - timedelta(days=1))
+        stale = DayPass.objects.create(name="Yesterday", valid_on=self.today - timedelta(days=1))
         resp = self.client.post(f"/api/billing/day-passes/{stale.id}/check_in/")
         self.assertEqual(resp.status_code, 400)
         self.assertIn("not today", resp.data["detail"])
@@ -132,8 +135,8 @@ class DayPassApiTests(TenantAPIMixin, APITestCase):
 
     def test_the_book_can_be_read_for_one_day(self):
         DayPass.objects.create(name="Today")
-        DayPass.objects.create(name="Last week", valid_on=TODAY - timedelta(days=7))
-        resp = self.client.get(f"/api/billing/day-passes/?on={TODAY}")
+        DayPass.objects.create(name="Last week", valid_on=self.today - timedelta(days=7))
+        resp = self.client.get(f"/api/billing/day-passes/?on={self.today}")
         self.assertEqual(resp.data["count"], 1)
 
     def test_whether_a_guest_is_in_is_derived_not_flagged(self):

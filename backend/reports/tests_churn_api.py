@@ -21,15 +21,17 @@ from tenancy.models import Membership
 
 User = get_user_model()
 
-TODAY = timezone.localdate()
-
 
 def iso(days_from_today):
-    return (TODAY + timedelta(days=days_from_today)).isoformat()
+    # Today is read when the test calls this, not once at import: a run that
+    # crossed midnight otherwise asked for yesterday's window.
+    return (timezone.localdate() + timedelta(days=days_from_today)).isoformat()
 
 
 class ChurnReportApiTests(TenantAPIMixin, APITestCase):
     def setUp(self):
+        # Per test, for the reason given in iso().
+        self.today = timezone.localdate()
         self.admin = self._person("owner", Role.ADMIN)
         self.plan = Plan.objects.create(name="Monthly", price=Decimal("1000"), duration_days=30)
 
@@ -42,7 +44,7 @@ class ChurnReportApiTests(TenantAPIMixin, APITestCase):
         return user
 
     def _paid_until(self, member, days_from_today, plan=None):
-        end = TODAY + timedelta(days=days_from_today)
+        end = self.today + timedelta(days=days_from_today)
         return Payment.objects.create(
             member=member,
             plan=plan or self.plan,
@@ -71,7 +73,9 @@ class ChurnReportApiTests(TenantAPIMixin, APITestCase):
     def test_the_default_window_still_works(self):
         resp = self.churn()
         self.assertEqual(resp.status_code, 200, resp.content)
-        self.assertEqual((resp.data["start"], resp.data["end"]), (TODAY - timedelta(days=29), TODAY))
+        self.assertEqual(
+            (resp.data["start"], resp.data["end"]), (self.today - timedelta(days=29), self.today)
+        )
 
     # -- what it counts
 
