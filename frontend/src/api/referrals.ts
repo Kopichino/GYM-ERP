@@ -84,3 +84,12 @@ export async function createReferralProgram(payload: { reward_days: number; blur
   const res = await api.post<ReferralProgram>("/referrals/programs/", payload);
   return res.data;
 }
+
+/** Changes an offer in place -- how the running offer is edited. */
+export async function updateReferralProgram(
+  id: number,
+  payload: Partial<{ reward_days: number; blurb: string; is_active: boolean }>,
+) {
+  const res = await api.patch<ReferralProgram>(`/referrals/programs/${id}/`, payload);
+  return res.data;
+}

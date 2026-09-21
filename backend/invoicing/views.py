@@ -1,12 +1,11 @@
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import action
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ReadOnlyModelViewSet
 
 from billing.models import Payment
-from core.permissions import access, IsAdmin
+from core.permissions import access, IsAdmin, IsTenantMember
 
 from .models import Invoice
 from .pdf import render_invoice
@@ -19,7 +18,10 @@ class InvoiceViewSet(ReadOnlyModelViewSet):
     document that can be rewritten isn't worth much. Hence read-only."""
 
     serializer_class = InvoiceSerializer
-    permission_classes = [IsAuthenticated]
+    # Standing at the gym in the URL, not just a signed-in account: without it a
+    # person from another gym could read this gym's (empty) list for them and
+    # file new rows under a gym they do not belong to.
+    permission_classes = [IsTenantMember]
 
     def get_queryset(self):
         queryset = Invoice.objects.select_related("payment__member", "payment__plan")

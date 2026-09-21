@@ -5,7 +5,7 @@ from django.db.utils import IntegrityError
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
-from core.testing import TenantAPIMixin
+from core.testing import TenantAPIMixin, enrol
 
 from accounts.models import MemberProfile, Role
 from billing.models import PaymentMethod, Plan
@@ -194,6 +194,7 @@ class BrandedEmailTests(TenantAPIMixin, APITestCase):
             username="mailed", email="m@example.com", password="pass12345", role=Role.MEMBER
         )
         MemberProfile.objects.get_or_create(user=member)
+        enrol(member)
         plan = Plan.objects.create(name="Monthly", price=Decimal("1500"), duration_days=30)
         record_payment(
             member=member,

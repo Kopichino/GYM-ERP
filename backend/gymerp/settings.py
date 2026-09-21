@@ -22,6 +22,26 @@ environ.Env.read_env(BASE_DIR / ".env")
 
 SECRET_KEY = env("SECRET_KEY", default="django-insecure-dev-only-change-me")
 DEBUG = env.bool("DEBUG", default=False)
+
+# Every access token, refresh token and pending two-step sign-in is signed with
+# this key, and the placeholders are published in this repository. Running a
+# production process on one would let anybody mint a session for any account.
+_PLACEHOLDER_SECRET_KEYS = {
+    "",
+    "django-insecure-dev-only-change-me",
+    "change-me-to-a-long-random-string",
+}
+if not DEBUG and (
+    SECRET_KEY in _PLACEHOLDER_SECRET_KEYS
+    or SECRET_KEY.startswith("django-insecure")
+    or len(SECRET_KEY) < 50
+):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(
+        "SECRET_KEY is missing, too short, or a published placeholder. Set a long "
+        "random SECRET_KEY before running with DEBUG=False."
+    )
 # A list subclass, so a gym that verifies its own domain is served without a
 # redeploy. The configured entries below are the platform's own hosts and keep
 # behaving exactly as before; see tenancy/hosts.py.
@@ -82,6 +102,8 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
+    # Before anything reads a body; after CORS so a browser can read the 413.
+    "core.middleware.RequestSizeLimitMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -172,8 +194,14 @@ else:
 #   DJANGO_ADMIN_URL=<segment>  moves it somewhere unguessable, which is not
 #                               security on its own but removes it from the
 #                               undirected scanning that finds it today.
-DJANGO_ADMIN_ENABLED = env.bool("DJANGO_ADMIN_ENABLED", default=True)
+# Off in production unless explicitly switched on: it is a password-only
+# console over every gym's data, with no second factor and no tenant scoping.
+DJANGO_ADMIN_ENABLED = env.bool("DJANGO_ADMIN_ENABLED", default=DEBUG)
 DJANGO_ADMIN_URL = env("DJANGO_ADMIN_URL", default="admin/").lstrip("/")
+
+# The largest request body accepted at all -- the gallery's 20MB video plus
+# form overhead. Checked on the declared length, before anything is read.
+MAX_REQUEST_BYTES = env.int("MAX_REQUEST_BYTES", default=25 * 1024 * 1024)
 
 
 
@@ -232,13 +260,20 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        # SimpleJWT, plus the early revocation logging out and password
+        # resets depend on. See accounts.revocation.
+        "accounts.authentication.RevocableJWTAuthentication",
     ),
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
+    "DEFAULT_PAGINATION_CLASS": "core.pagination.StandardPagination",
     "PAGE_SIZE": 20,
+    # How many proxies sit in front of the app. Left unset, DRF keyed per-IP
+    # throttles on the client's own X-Forwarded-For, so every forged value
+    # bought a fresh allowance. 0 means trust nothing but the socket address;
+    # behind one reverse proxy (Render, a load balancer) set NUM_PROXIES=1.
+    "NUM_PROXIES": env.int("NUM_PROXIES", default=0),
     "DEFAULT_THROTTLE_CLASSES": (
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
@@ -251,12 +286,35 @@ REST_FRAMEWORK = {
         # Per-username, so credential stuffing from rotating IPs is limited by
         # whose account it is aimed at rather than only by where it comes from.
         "login_attempt": "10/min",
+        # Forgot-password requests, per IP. Loose enough for a gym's shared
+        # Wi-Fi, tight enough that the endpoint is no use as a mail cannon.
+        "password_reset": "10/hour",
+        # Two-step sign-in. `mfa` is per IP across the sign-in steps; the two
+        # `mfa_attempt` scopes count code guesses per account -- see
+        # accounts.throttling.
+        "mfa": "30/min",
+        "mfa_attempt": "5/min",
+        "mfa_attempt_hourly": "30/hour",
         "checkinout": "30/min",
         "checkout": "20/min",
         # Per lead key, not per IP -- a gym's form sits behind their CDN so
         # visitors share an address, and IP limiting would let one gym's spam
         # spend every other gym's allowance.
         "leads": "30/hour",
+        # Signed-out traffic, in buckets of its own so one kind cannot spend
+        # another's allowance. On the single anonymous bucket, a busy hour of
+        # people opening the website used up the refreshes, and members sharing
+        # the gym's connection were signed out on their next reload.
+        #
+        # Refresh with a genuine session, per account. A tab refreshes about
+        # once every fifteen minutes, so this only ever stops a runaway loop.
+        "refresh": "60/min",
+        # Refresh with no session, per IP. A signed-out visitor sends one per
+        # page load and stays signed out whatever the answer.
+        "refresh_anonymous": "30/min",
+        # The gym's name and price list, per IP. Cheap reads that everyone on
+        # the gym's connection needs, member or visitor.
+        "public": "120/min",
     },
 }
 
@@ -275,6 +333,16 @@ SIMPLE_JWT = {
 JWT_REFRESH_COOKIE_NAME = "refresh_token"
 JWT_REFRESH_COOKIE_SECURE = not DEBUG
 JWT_REFRESH_COOKIE_SAMESITE = "None" if not DEBUG else "Lax"
+
+# --- Two-step sign-in ----------------------------------------------------
+#
+# Every account -- member, trainer and admin -- signs in with a code from an
+# authenticator app as well as its password, and sets one up the first time it
+# signs in after this is switched on. Read per request, not at import.
+# Turning it off stops *requiring* it; an account that has set it up keeps it.
+MFA_REQUIRED = env.bool("MFA_REQUIRED", default=True)
+# The name an authenticator app files these accounts under.
+MFA_ISSUER = env("MFA_ISSUER", default="IRONCORE")
 
 # --- CORS / CSRF (frontend is a separate origin: Vercel) ---------------
 
@@ -327,6 +395,12 @@ else:
 # exists to prevent. core/tests_transport_security.py holds the real invariant.
 SILENCED_SYSTEM_CHECKS = ["security.W021"]
 
+# The suite runs with DEBUG off, which turns SECURE_SSL_REDIRECT on -- and the
+# test client speaks HTTP, so every request would be answered 301 before it
+# reached a view. The runner stands that redirect down for the run only; the
+# production setting above is untouched. See core/test_runner.py.
+TEST_RUNNER = "core.test_runner.SecurityAwareTestRunner"
+
 # --- Error monitoring (free tier, optional) -----------------------------
 
 # --- Gym identity, printed on GST invoices -----------------------------
@@ -374,6 +448,15 @@ DEFAULT_FROM_EMAIL = env(
     "DEFAULT_FROM_EMAIL", default=f"{GYM_NAME} <no-reply@example.com>"
 )
 
+# --- Password reset -----------------------------------------------------
+# Where the link in a reset email points: the frontend's own page, which posts
+# the new password back to the API. Must be the deployed frontend's address in
+# production, or members are emailed a link to localhost.
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
+# A day rather than Django's three: long enough to find the email, short enough
+# that one sitting in an old inbox is not a standing way into the account.
+PASSWORD_RESET_TIMEOUT = 60 * 60 * 24
+
 # --- Online payments (Razorpay) -----------------------------------------
 
 # Leave the key blank and online payment is simply off: the member portal asks
@@ -414,3 +497,21 @@ if SENTRY_DSN:
         traces_sample_rate=0.1,
         send_default_pii=False,
     )
+
+
+# --- Logging -----------------------------------------------------------------
+# Django's defaults stay as they are; this only gives security events a home.
+# They go to stdout like everything else on the host, and are written by
+# core.security_log, which never records a password, code, token or secret.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {"security_console": {"class": "logging.StreamHandler"}},
+    "loggers": {
+        "security": {
+            "handlers": ["security_console"],
+            "level": env("SECURITY_LOG_LEVEL", default="INFO"),
+            "propagate": False,
+        }
+    },
+}

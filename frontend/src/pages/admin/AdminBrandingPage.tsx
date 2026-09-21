@@ -59,6 +59,7 @@ const BLANK = {
   address: "",
   website: "",
   instagram: "",
+  opening_hours: "",
   gstin: "",
   state: "",
 };
@@ -84,6 +85,7 @@ function BrandingForm({ current }: { current?: BrandingAdmin }) {
           address: current.address,
           website: current.website,
           instagram: current.instagram,
+          opening_hours: current.opening_hours,
           gstin: current.gstin,
           state: current.state,
         }
@@ -219,8 +221,9 @@ function BrandingForm({ current }: { current?: BrandingAdmin }) {
           Contact and tax details
         </h2>
         <p className="mb-4 max-w-prose text-sm text-[var(--color-text-muted)]">
-          The address and GSTIN are printed on invoices. The state decides whether a sale is
-          split into CGST + SGST or charged as IGST, so it has to match your registration.
+          The phone, email, website, Instagram, address and opening hours are shown on your public
+          website. The address and GSTIN are also printed on invoices, and the state decides whether
+          a sale is split into CGST + SGST or charged as IGST, so it has to match your registration.
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
           <Input placeholder="Phone" value={form.phone} onChange={field("phone")} />
@@ -237,6 +240,13 @@ function BrandingForm({ current }: { current?: BrandingAdmin }) {
           onChange={field("address")}
           className="mt-3"
         />
+        <Textarea
+          rows={3}
+          placeholder={"Opening hours for your website, one line each, e.g.\nMonday to Friday: 5:30 - 23:00"}
+          value={form.opening_hours}
+          onChange={field("opening_hours")}
+          className="mt-3"
+        />
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Button onClick={() => save.mutate()} disabled={!form.name || save.isPending}>
@@ -244,7 +254,7 @@ function BrandingForm({ current }: { current?: BrandingAdmin }) {
           </Button>
           {saved && (
             <span className="text-sm" style={{ color: "#22c55e" }}>
-              Saved — the new colours are live.
+              Saved — the portal and your website now use these details.
             </span>
           )}
           <ErrorText>{error}</ErrorText>

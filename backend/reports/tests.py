@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from core.testing import TenantAPIMixin
+from core.testing import TenantAPIMixin, enrol
 
 from accounts.models import MemberProfile, Role
 from billing.models import Plan
@@ -19,7 +19,6 @@ from .models import SavedReport
 from .services import churn, pt_performance, revenue
 
 User = get_user_model()
-TODAY = timezone.localdate()
 
 
 def make_user(username, role=Role.MEMBER):
@@ -27,11 +26,16 @@ def make_user(username, role=Role.MEMBER):
         username=username, email=f"{username}@example.com", password="pass12345", role=role
     )
     MemberProfile.objects.get_or_create(user=user)
+    enrol(user)
     return user
 
 
 class RevenueReportTests(TenantAPIMixin, APITestCase):
     def setUp(self):
+        # Taken per test, not once at import. The runner imports every module
+        # at the start of a long run, so a run that crossed midnight handed these
+        # tests yesterday while payments were stamped with the real today.
+        self.today = timezone.localdate()
         self.member = make_user("member")
         self.plan = Plan.objects.create(name="Monthly", price=Decimal("1000"), duration_days=30)
         record_payment(member=self.member, plan=self.plan, amount=Decimal("800"), method="cash",
@@ -39,7 +43,7 @@ class RevenueReportTests(TenantAPIMixin, APITestCase):
         record_payment(member=make_user("second"), plan=self.plan, amount=Decimal("1000"), method="upi")
 
         category = ExpenseCategory.objects.create(name="Rent")
-        Expense.objects.create(category=category, amount=Decimal("500"), spent_on=TODAY)
+        Expense.objects.create(category=category, amount=Decimal("500"), spent_on=self.today)
 
     def test_revenue_nets_expenses_off_collections(self):
         data = revenue()
@@ -58,28 +62,30 @@ class RevenueReportTests(TenantAPIMixin, APITestCase):
         self.assertEqual({r["method"] for r in data["by_method"]}, {"cash", "upi"})
 
     def test_a_window_excludes_payments_outside_it(self):
-        data = revenue(start=TODAY + timedelta(days=1), end=TODAY + timedelta(days=5))
+        data = revenue(start=self.today + timedelta(days=1), end=self.today + timedelta(days=5))
         self.assertEqual(data["collected"], Decimal("0"))
 
 
 class ChurnReportTests(TenantAPIMixin, APITestCase):
     def setUp(self):
+        # Per test, for the reason given in RevenueReportTests.setUp.
+        self.today = timezone.localdate()
         self.plan = Plan.objects.create(name="Monthly", price=Decimal("1000"), duration_days=30)
 
     def test_a_lapsed_member_counts_as_churned(self):
         member = make_user("lapsed")
         record_payment(
             member=member, plan=self.plan, amount=Decimal("1000"), method="cash",
-            paid_date=TODAY - timedelta(days=90),
+            paid_date=self.today - timedelta(days=90),
         )
-        data = churn(start=TODAY - timedelta(days=90), end=TODAY)
+        data = churn(start=self.today - timedelta(days=90), end=self.today)
         self.assertEqual(data["churned_count"], 1)
         self.assertEqual(data["members"][0]["member"], "lapsed")
 
     def test_a_current_member_is_retained_not_churned(self):
         member = make_user("current")
         record_payment(member=member, plan=self.plan, amount=Decimal("1000"), method="cash")
-        data = churn(start=TODAY - timedelta(days=90), end=TODAY + timedelta(days=90))
+        data = churn(start=self.today - timedelta(days=90), end=self.today + timedelta(days=90))
         self.assertEqual(data["churned_count"], 0)
         self.assertEqual(data["retained_count"], 1)
 
@@ -269,8 +275,7 @@ class EveryReportRouteIsAdminOnlyTests(TenantAPIMixin, APITestCase):
                 self.assertEqual(self.client.get(url).status_code, 403)
 
     def test_a_trainer_is_refused_every_read(self):
-        # A trainer's own numbers live under /api/commissions/my-earnings/;
-        # the gym's books are not theirs to read.
+        # The gym's books are not a trainer's to read.
         self.client.force_authenticate(self.trainer)
         for url in self._reads():
             with self.subTest(url=url):

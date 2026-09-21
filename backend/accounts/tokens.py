@@ -34,6 +34,13 @@ def revoke_refresh_tokens(user):
         logger.warning("token_blacklist is not installed; cannot revoke tokens")
         return 0
 
+    # Refresh tokens are the long-lived half; the access tokens already handed
+    # out would otherwise keep working for up to fifteen minutes after the
+    # reset that was meant to lock someone out. See accounts.revocation.
+    from .revocation import end_access_tokens
+
+    end_access_tokens(user)
+
     revoked = 0
     for token in OutstandingToken.objects.filter(user=user):
         try:

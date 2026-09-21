@@ -38,6 +38,18 @@ export function monthStartIso() {
   return isoDate(date);
 }
 
+/** Word for word what the API says about a backwards report window. */
+export const END_BEFORE_START = "The end date is before the start date.";
+
+/**
+ * What is wrong with a From/To pair, or "" when nothing is -- including while
+ * either is blank, since a blank end means "use the default". YYYY-MM-DD dates
+ * compare correctly as text.
+ */
+export function dateRangeProblem(start: string, end: string) {
+  return start && end && end < start ? END_BEFORE_START : "";
+}
+
 /** Monday of the week containing `date`, at local midnight. */
 export function weekStart(date: Date) {
   const copy = new Date(date);

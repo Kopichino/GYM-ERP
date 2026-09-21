@@ -1,8 +1,8 @@
 """Report aggregation.
 
 Nothing here stores a figure. Every number is computed from the ledgers that
-already exist -- payments, check-ins, expenses, commission entries -- so a
-report can never disagree with the screen it summarises.
+already exist -- payments, check-ins, expenses -- so a report can never
+disagree with the screen it summarises.
 """
 
 from datetime import timedelta
@@ -15,8 +15,8 @@ from django.utils import timezone
 from accounts.models import Role, User
 from attendance.models import CheckInOut
 from billing.models import Payment, PaymentStatus
-from commissions.models import CommissionEntry, EntryStatus
 from expenses.models import Expense
+from tenancy.people import members_here, trainers_here
 
 
 def _window(start, end):
@@ -91,7 +91,7 @@ def attendance(start=None, end=None):
         hour = timezone.localtime(stamp).hour
         by_hour[hour] = by_hour.get(hour, 0) + 1
 
-    active_members = User.objects.filter(role=Role.MEMBER).count()
+    active_members = members_here().count()
     unique = visits.values("user").distinct().count()
 
     return {
@@ -122,7 +122,7 @@ def churn(start=None, end=None, grace_days=7):
     cutoff = timezone.localdate() - timedelta(days=grace_days)
 
     lapsed, retained = [], 0
-    for member in User.objects.filter(role=Role.MEMBER).select_related("profile"):
+    for member in members_here().select_related("profile"):
         last = (
             Payment.objects.filter(member=member, status=PaymentStatus.COMPLETED)
             .order_by("-period_end")
@@ -160,13 +160,14 @@ def churn(start=None, end=None, grace_days=7):
 
 
 def pt_performance(start=None, end=None):
-    """Per-trainer: roster size, sessions coached, revenue attributed, and what
-    they earned from it."""
+    """Per-trainer: roster size, revenue attributed and member visits.
+
+    There is no commission figure: trainer commission was removed from the product."""
     start, end = _window(start, end)
     rows = []
 
-    for trainer in User.objects.filter(role=Role.TRAINER):
-        members = User.objects.filter(profile__trainer=trainer)
+    for trainer in trainers_here():
+        members = members_here().filter(profile__trainer=trainer)
         member_ids = list(members.values_list("id", flat=True))
 
         payments = Payment.objects.filter(
@@ -175,9 +176,6 @@ def pt_performance(start=None, end=None):
             paid_date__gte=start,
             paid_date__lte=end,
         )
-        entries = CommissionEntry.objects.filter(
-            trainer=trainer, earned_on__gte=start, earned_on__lte=end
-        ).exclude(status=EntryStatus.VOID)
         visits = CheckInOut.objects.filter(
             user_id__in=member_ids,
             check_in_time__date__gte=start,
@@ -191,7 +189,6 @@ def pt_performance(start=None, end=None):
                 "member_count": len(member_ids),
                 "revenue": payments.aggregate(t=Sum("amount"))["t"] or Decimal("0"),
                 "payment_count": payments.count(),
-                "commission": entries.aggregate(t=Sum("amount"))["t"] or Decimal("0"),
                 "member_visits": visits.count(),
             }
         )

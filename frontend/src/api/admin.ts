@@ -1,4 +1,5 @@
 import { api } from "../lib/api";
+import { fetchAll } from "../lib/pagination";
 
 export interface Member {
   id: number;
@@ -13,11 +14,18 @@ export interface Member {
   trainer_name: string | null;
   biometric_id: string | null;
   last_check_in: string | null;
+  /** False for an account created without one -- imported members, mostly. */
+  has_password: boolean;
+  /** Whether they have an authenticator app set up for two-step sign-in. */
+  has_mfa: boolean;
 }
 
+/**
+ * Every member of this gym. The till's member picker and the Members page need
+ * the whole list; reading only the first page left the 21st member unsellable.
+ */
 export async function fetchMembers() {
-  const res = await api.get<{ results: Member[] }>("/auth/admin/members/");
-  return res.data.results;
+  return fetchAll<Member>("/auth/admin/members/");
 }
 
 export async function downloadMembersExcel() {
@@ -30,4 +38,9 @@ export async function downloadMembersExcel() {
   link.click();
   link.remove();
   window.URL.revokeObjectURL(url);
+}
+
+/** Give a member of this gym a password -- for accounts created without one. */
+export async function setMemberPassword(id: number, password: string) {
+  await api.post(`/auth/admin/members/${id}/set-password/`, { password });
 }

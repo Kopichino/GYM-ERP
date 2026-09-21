@@ -8,6 +8,15 @@ class ReferralProgramSerializer(serializers.ModelSerializer):
         model = ReferralProgram
         fields = ["id", "reward_days", "blurb", "is_active", "updated_at"]
         read_only_fields = ["id", "updated_at"]
+        # Nothing to give is not an offer: a reward of 0 days reads as no
+        # programme running when it is granted, and members would be told they
+        # get 0 free days.
+        extra_kwargs = {
+            "reward_days": {
+                "min_value": 1,
+                "error_messages": {"min_value": "An offer has to give at least 1 free day."},
+            }
+        }
 
 
 class ReferralRewardSerializer(serializers.ModelSerializer):
@@ -49,6 +58,15 @@ class ReferralSerializer(serializers.ModelSerializer):
         # A member names who they are referring; who that turns out to be, and
         # whether they paid, is not theirs to assert.
         read_only_fields = ["id", "referrer", "referred_user", "enquiry", "created_at"]
+
+    def validate_phone(self, value):
+        """A referral with a phone becomes a call-back lead, so the number has to
+        be one the front desk can dial -- the same rule the enquiry form holds.
+        Leaving it out is still fine."""
+        value = value.strip()
+        if value and sum(character.isdigit() for character in value) < 7:
+            raise serializers.ValidationError("That doesn't look like a phone number.")
+        return value
 
 
 class MyReferralsSerializer(serializers.Serializer):

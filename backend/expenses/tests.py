@@ -6,12 +6,13 @@ summary adds up to the same figure the ledger holds, since reports subtracts
 this from revenue rather than storing a margin anywhere.
 """
 
+import io
 from datetime import date, timedelta
 from decimal import Decimal
 
+from PIL import Image
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db.models.deletion import ProtectedError
 from rest_framework.test import APITestCase
 
 from core.testing import TenantAPIMixin
@@ -124,16 +125,14 @@ class ExpenseRecordingTests(TenantAPIMixin, APITestCase):
 
     def test_a_category_in_use_cannot_be_deleted(self):
         # PROTECT on the FK: deleting "Rent" would orphan every rent payment
-        # and silently drop them out of the P&L.
-        #
-        # Note this currently escapes the view uncaught, so the admin sees a
-        # 500 rather than a readable "this category is still in use". The row
-        # is safe either way, which is what this test pins; turning it into a
-        # 409 would be a separate change to ExpenseCategoryViewSet.
-        Expense.objects.create(category=self.category, amount=Decimal("100"))
-        with self.assertRaises(ProtectedError):
-            self.client.delete(f"/api/expenses/categories/{self.category.id}/")
+        # and silently drop them out of the P&L. The refusal reaches the admin
+        # as a readable 400, not a ProtectedError escaping as a 500.
+        expense = Expense.objects.create(category=self.category, amount=Decimal("100"))
+        resp = self.client.delete(f"/api/expenses/categories/{self.category.id}/")
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("detail", resp.data)
         self.assertTrue(ExpenseCategory.objects.filter(pk=self.category.pk).exists())
+        self.assertTrue(Expense.objects.filter(pk=expense.pk, category=self.category).exists())
 
     def test_an_unused_category_can_be_deleted(self):
         spare = ExpenseCategory.objects.create(name="Retired line item")
@@ -207,6 +206,32 @@ class ExpenseFilterTests(TenantAPIMixin, APITestCase):
         self.assertEqual(data["count"], 0)
         self.assertEqual(data["by_category"], [])
 
+    # -- the window itself, read the way every report reads one
+
+    def test_a_malformed_date_is_a_400_on_that_parameter_not_a_500(self):
+        for path in ("/api/expenses/", "/api/expenses/summary/"):
+            for params, field in (("from=2026-13-45", "from"), ("to=not-a-date", "to")):
+                with self.subTest(path=path, params=params):
+                    resp = self.client.get(f"{path}?{params}")
+                    self.assertEqual(resp.status_code, 400, resp.content)
+                    self.assertIn(field, resp.data)
+
+    def test_a_to_date_before_the_from_date_is_refused_not_answered_with_nothing(self):
+        backwards = f"from={self.today.isoformat()}&to={(self.today - timedelta(days=1)).isoformat()}"
+        for path in ("/api/expenses/", "/api/expenses/summary/"):
+            with self.subTest(path=path):
+                resp = self.client.get(f"{path}?{backwards}")
+                self.assertEqual(resp.status_code, 400, resp.content)
+                self.assertEqual(
+                    [str(m) for m in resp.data["to"]], ["The end date is before the start date."]
+                )
+
+    def test_a_same_day_window_still_works(self):
+        day = self.today.isoformat()
+        resp = self.client.get(f"/api/expenses/summary/?from={day}&to={day}")
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.data["count"], 1)
+
 
 class ReceiptUploadTests(TenantAPIMixin, APITestCase):
     """`receipt` is a bare FileField, so nothing about it is checked for free.
@@ -234,7 +259,11 @@ class ReceiptUploadTests(TenantAPIMixin, APITestCase):
         self.assertEqual(self._post(pdf).status_code, 201)
 
     def test_a_photo_of_a_bill_is_accepted(self):
-        photo = SimpleUploadedFile("bill.jpg", b"\xff\xd8\xff fake", content_type="image/jpeg")
+        # A real (tiny) JPEG. JPEG magic bytes in front of anything else are the
+        # classic polyglot, so a receipt photo has to decode as an image.
+        buffer = io.BytesIO()
+        Image.new("RGB", (4, 4), "white").save(buffer, "JPEG")
+        photo = SimpleUploadedFile("bill.jpg", buffer.getvalue(), content_type="image/jpeg")
         self.assertEqual(self._post(photo).status_code, 201)
 
     def test_an_executable_is_refused(self):

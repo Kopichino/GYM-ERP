@@ -6,7 +6,37 @@ from django.utils import timezone
 
 from accounts.models import MembershipStatus
 
-from .models import Discount, DiscountType, Payment, PaymentGateway, PaymentStatus
+from .models import Discount, DiscountType, Payment, PaymentGateway, PaymentStatus, Plan
+
+#: What every sale path says about a plan that has been retired.
+NOT_ON_SALE = "That plan is no longer on sale."
+
+
+def sellable_plans():
+    """The plans a new sale may be made on, at the gym in scope.
+
+    The one definition of "on sale". Everything that starts a sale reads it --
+    the counter checkout and its quote, recording a payment, online checkout,
+    the till's picker and the public price list -- so none of them can disagree.
+    Retiring a plan takes it off sale and nothing more: payments, invoices and
+    memberships already on it are untouched and stay readable.
+    """
+    return Plan.objects.filter(is_active=True)
+
+
+def is_sellable(plan):
+    return sellable_plans().filter(pk=plan.pk).exists()
+
+
+def lock_sellable_plan(plan_id):
+    """The plan re-read under a row lock, or None if it is no longer on sale.
+
+    Call it inside the transaction that writes the payment. A sale checks its
+    plan before pricing it, and an admin can retire the plan in between; this
+    closes that gap. A plan retired a moment ago is seen here and refused, and
+    retiring one while a sale holds the lock waits until that sale is written.
+    """
+    return sellable_plans().select_for_update().filter(pk=plan_id).first()
 
 
 def get_latest_completed_payment(user):

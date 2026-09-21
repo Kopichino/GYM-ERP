@@ -51,6 +51,25 @@ def send(phone, body, *, user=None, automated=False, template=None, parameters=N
     return message
 
 
+def _tenant_for(member):
+    """The gym a WhatsApp sender belongs to, or None.
+
+    Where somebody holds standing at more than one gym the newest is used: a
+    member who moved gyms is answered by the one they joined most recently.
+    """
+    if member is None:
+        return None
+    from tenancy.models import Membership
+
+    membership = (
+        Membership.objects.filter(user=member, is_active=True)
+        .select_related("tenant")
+        .order_by("-created_at")
+        .first()
+    )
+    return membership.tenant if membership else None
+
+
 def handle_incoming(phone, text, external_id=""):
     """Logs what a member said and replies.
 
@@ -58,24 +77,39 @@ def handle_incoming(phone, text, external_id=""):
     have already seen is recorded once and answered once -- otherwise a member
     gets the same reply three times.
     """
+    from tenancy import context
+
     digits = normalise_phone(phone)
-    if external_id and Message.objects.filter(external_id=external_id).exists():
+    member = member_for_phone(digits)
+
+    # Meta is configured with one webhook URL for the platform, so a delivery
+    # names no gym and the scoped message log raised -- a 500 Meta then retries
+    # for ever. The number names the person, and the person names their gym, so
+    # the whole exchange is handled inside that gym: a message can never be
+    # logged against, or answered from, a gym its sender does not belong to.
+    tenant = context.get() or _tenant_for(member)
+    if tenant is None:
+        # Nobody on the platform owns this number and no gym was named. Nothing
+        # to record it against, so it is acknowledged and dropped.
         return None
 
-    member = member_for_phone(digits)
-    Message.objects.create(
-        user=member,
-        phone=digits,
-        direction=Direction.INBOUND,
-        body=text,
-        status=DeliveryStatus.RECEIVED,
-        external_id=external_id,
-    )
+    with context.scope(tenant):
+        if external_id and Message.objects.filter(external_id=external_id).exists():
+            return None
 
-    reply = answer(text, digits)
-    # A reply to a message the member just sent is inside the 24-hour window,
-    # so free text is allowed here.
-    return send(digits, reply, user=member, automated=True)
+        Message.objects.create(
+            user=member,
+            phone=digits,
+            direction=Direction.INBOUND,
+            body=text,
+            status=DeliveryStatus.RECEIVED,
+            external_id=external_id,
+        )
+
+        reply = answer(text, digits)
+        # A reply to a message the member just sent is inside the 24-hour
+        # window, so free text is allowed here.
+        return send(digits, reply, user=member, automated=True)
 
 
 def send_expiry_reminders(on=None, template=None):

@@ -13,7 +13,6 @@ from . import context
 from .models import Membership, Organisation, Tenant
 
 User = get_user_model()
-TODAY = timezone.localdate()
 
 
 def make_org(slug="fitzone", name="FitZone"):
@@ -64,6 +63,10 @@ class HierarchyTests(TestCase):
 
 class MembershipTests(TestCase):
     def setUp(self):
+        # Taken per test, not once at import. The runner imports every module
+        # at the start of a long run, so a run that crossed midnight handed these
+        # tests yesterday while the model's own defaults used the real today.
+        self.today = timezone.localdate()
         self.org = make_org()
         self.central = make_tenant(self.org, "central")
         self.north = make_tenant(self.org, "north")
@@ -108,20 +111,20 @@ class MembershipTests(TestCase):
         """How a day-pass guest who wanted their history is represented."""
         row = Membership.objects.create(
             user=self.user, tenant=self.central, role=Role.MEMBER,
-            starts_on=TODAY - timedelta(days=10), expires_on=TODAY - timedelta(days=1),
+            starts_on=self.today - timedelta(days=10), expires_on=self.today - timedelta(days=1),
         )
         self.assertFalse(row.is_current())
 
     def test_it_is_current_on_its_last_day(self):
         row = Membership.objects.create(
-            user=self.user, tenant=self.central, role=Role.MEMBER, expires_on=TODAY
+            user=self.user, tenant=self.central, role=Role.MEMBER, expires_on=self.today
         )
         self.assertTrue(row.is_current())
 
     def test_one_that_has_not_started_is_not_current(self):
         row = Membership.objects.create(
             user=self.user, tenant=self.central, role=Role.MEMBER,
-            starts_on=TODAY + timedelta(days=3),
+            starts_on=self.today + timedelta(days=3),
         )
         self.assertFalse(row.is_current())
 
@@ -137,7 +140,7 @@ class MembershipTests(TestCase):
             with transaction.atomic():
                 Membership.objects.create(
                     user=self.user, tenant=self.central, role=Role.MEMBER,
-                    starts_on=TODAY, expires_on=TODAY - timedelta(days=1),
+                    starts_on=self.today, expires_on=self.today - timedelta(days=1),
                 )
 
 

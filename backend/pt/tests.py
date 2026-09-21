@@ -1,11 +1,12 @@
 from datetime import date, time, timedelta
+from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from core.testing import TenantAPIMixin
+from core.testing import TenantAPIMixin, enrol
 
 from accounts.models import MemberProfile, Role
 
@@ -20,6 +21,7 @@ def make_user(username, role=Role.MEMBER):
         username=username, email=f"{username}@example.com", password="pass12345", role=role
     )
     MemberProfile.objects.get_or_create(user=user)
+    enrol(user)
     return user
 
 
@@ -369,3 +371,166 @@ class PTApiTests(TenantAPIMixin, APITestCase):
         self.client.patch(f"/api/pt/sessions/{session.id}/", {"status": "completed"})
         session.refresh_from_db()
         self.assertEqual(session.status, SessionStatus.BOOKED)
+
+
+class DateParameterTests(TenantAPIMixin, APITestCase):
+    """Dates reach these endpoints as query-string text.
+
+    Slots parsed `date` with `date.fromisoformat` and the sessions list handed
+    `from` and `to` straight to the ORM, so a malformed date was a 500. It is a
+    400 naming the parameter; leaving the date out still means today.
+    """
+
+    def setUp(self):
+        self.trainer = make_user("datecoach", Role.TRAINER)
+        self.member = make_user("datemember")
+        self.day = next_weekday(2)
+        Availability.objects.create(
+            trainer=self.trainer, weekday=2, start_time=time(9), end_time=time(12)
+        )
+        self.client.force_authenticate(self.member)
+
+    def slots(self, **params):
+        return self.client.get("/api/pt/slots/", {"trainer": self.trainer.id, **params})
+
+    def test_a_malformed_date_is_a_400_on_date_not_a_500(self):
+        for value in ("not-a-date", "2026-13-45", "2026-02-30", "15/09/2026"):
+            with self.subTest(date=value):
+                resp = self.slots(date=value)
+                self.assertEqual(resp.status_code, 400, resp.content)
+                self.assertEqual(list(resp.data), ["date"])
+
+    def test_a_valid_date_still_answers_with_its_slots(self):
+        resp = self.slots(date=self.day.isoformat())
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.data["date"], self.day)
+        self.assertEqual(len(resp.data["results"]), 3)
+
+    def test_a_blank_or_missing_date_means_today(self):
+        # Today is pinned to a Wednesday ahead, so none of its hours have passed
+        # whatever time the suite runs.
+        with mock.patch("pt.views.timezone.localdate", return_value=self.day):
+            for params in ({}, {"date": ""}):
+                with self.subTest(params=params):
+                    resp = self.slots(**params)
+                    self.assertEqual(resp.status_code, 200, resp.content)
+                    self.assertEqual(resp.data["date"], self.day)
+                    self.assertEqual(len(resp.data["results"]), 3)
+
+    def test_the_sessions_list_refuses_a_malformed_window_with_a_400(self):
+        for params, field in (({"from": "not-a-date"}, "from"), ({"to": "2026-13-45"}, "to")):
+            with self.subTest(params=params):
+                resp = self.client.get("/api/pt/sessions/", params)
+                self.assertEqual(resp.status_code, 400, resp.content)
+                self.assertIn(field, resp.data)
+
+    def test_the_sessions_list_still_filters_by_a_valid_window(self):
+        later = self.day + timedelta(days=7)
+        for on in (self.day, later):
+            book_session(
+                trainer=self.trainer, member=self.member, on=on,
+                start_time=time(9), end_time=time(10),
+            )
+        day = self.day.isoformat()
+        resp = self.client.get("/api/pt/sessions/", {"from": day, "to": day})
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual([row["date"] for row in resp.data["results"]], [day])
+        everything = self.client.get("/api/pt/sessions/", {"from": "", "to": ""})
+        self.assertEqual(everything.data["count"], 2)
+
+
+class TrainerParameterTests(TenantAPIMixin, APITestCase):
+    """A trainer id reaches these endpoints as client text.
+
+    Handed to the ORM as it came, "abc" or a blank raised a ValueError nobody
+    caught -- a 500. A malformed id is a 400 naming `trainer`; a well-formed id
+    that matches no trainer is still a 404, and a trainer naming someone else
+    is still refused before any lookup.
+    """
+
+    MALFORMED = ("abc", "", " ", "0", "-3", "1.5", "7abc")
+    OWN_ROWS = ("/api/pt/availability/", "/api/pt/unavailable/")
+
+    def setUp(self):
+        self.trainer = make_user("paramcoach", Role.TRAINER)
+        self.member = make_user("parammember")
+        self.admin = make_user("paramadmin", Role.ADMIN)
+        self.day = next_weekday(2)
+        Availability.objects.create(
+            trainer=self.trainer, weekday=2, start_time=time(9), end_time=time(12)
+        )
+        Unavailable.objects.create(trainer=self.trainer, date=self.day + timedelta(days=7))
+
+    def slots(self, trainer):
+        return self.client.get(
+            "/api/pt/slots/", {"trainer": trainer, "date": self.day.isoformat()}
+        )
+
+    def test_slots_refuse_a_malformed_trainer_with_a_400(self):
+        self.client.force_authenticate(self.member)
+        for value in self.MALFORMED:
+            with self.subTest(trainer=value):
+                resp = self.slots(value)
+                self.assertEqual(resp.status_code, 400, resp.content)
+                self.assertEqual(list(resp.data), ["trainer"])
+
+    def test_slots_for_an_unknown_or_missing_trainer_are_still_a_404(self):
+        self.client.force_authenticate(self.member)
+        # A member is not a trainer, and an id past any integer column matches
+        # no one either.
+        for value in ("999999", str(self.member.id), "99999999999999999999"):
+            with self.subTest(trainer=value):
+                self.assertEqual(self.slots(value).status_code, 404)
+        self.assertEqual(self.client.get("/api/pt/slots/").status_code, 404)
+
+    def test_slots_for_a_real_trainer_still_work(self):
+        self.client.force_authenticate(self.member)
+        resp = self.slots(str(self.trainer.id))
+        self.assertEqual(resp.status_code, 200, resp.content)
+        self.assertEqual(resp.data["trainer"], self.trainer.id)
+        self.assertEqual(len(resp.data["results"]), 3)
+
+    def test_an_admin_naming_a_malformed_trainer_gets_a_400(self):
+        # A blank is left out of these: here it has always meant "my own rows".
+        self.client.force_authenticate(self.admin)
+        for path in self.OWN_ROWS:
+            for value in ("abc", " ", "0", "-3", "1.5"):
+                with self.subTest(path=path, trainer=value):
+                    resp = self.client.get(path, {"trainer": value})
+                    self.assertEqual(resp.status_code, 400, resp.content)
+                    self.assertEqual(list(resp.data), ["trainer"])
+
+    def test_an_admin_posting_for_a_malformed_trainer_gets_a_400_and_saves_nothing(self):
+        self.client.force_authenticate(self.admin)
+        resp = self.client.post(
+            "/api/pt/availability/",
+            {"trainer": "abc", "weekday": 3, "start_time": "09:00", "end_time": "10:00"},
+        )
+        self.assertEqual(resp.status_code, 400, resp.content)
+        self.assertEqual(list(resp.data), ["trainer"])
+        self.assertFalse(Availability.objects.filter(weekday=3).exists())
+
+    def test_an_admin_naming_an_unknown_trainer_gets_a_404(self):
+        self.client.force_authenticate(self.admin)
+        for path in self.OWN_ROWS:
+            for value in ("999999", str(self.member.id)):
+                with self.subTest(path=path, trainer=value):
+                    self.assertEqual(self.client.get(path, {"trainer": value}).status_code, 404)
+
+    def test_an_admin_naming_a_real_trainer_still_sees_their_rows(self):
+        self.client.force_authenticate(self.admin)
+        for path in self.OWN_ROWS:
+            with self.subTest(path=path):
+                resp = self.client.get(path, {"trainer": str(self.trainer.id)})
+                self.assertEqual(resp.status_code, 200, resp.content)
+                self.assertEqual(len(resp.data["results"]), 1)
+
+    def test_a_trainer_naming_anyone_else_is_still_refused_before_any_lookup(self):
+        self.client.force_authenticate(self.trainer)
+        for value in ("abc", "999999"):
+            with self.subTest(trainer=value):
+                resp = self.client.get("/api/pt/availability/", {"trainer": value})
+                self.assertEqual(resp.status_code, 403, resp.content)
+        own = self.client.get("/api/pt/availability/", {"trainer": str(self.trainer.id)})
+        self.assertEqual(own.status_code, 200, own.content)
+        self.assertEqual(len(own.data["results"]), 1)

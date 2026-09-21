@@ -3,7 +3,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from core.testing import TenantAPIMixin
+from core.testing import TenantAPIMixin, enrol
 
 from accounts.models import MemberProfile, Role
 
@@ -45,6 +45,7 @@ class WorkoutScopingTests(TenantAPIMixin, APITestCase):
             username=username, email=f"{username}@example.com", password="pass12345", role=role
         )
         MemberProfile.objects.get_or_create(user=user)
+        enrol(user)
         return user
 
     def _progress(self, as_user, member=None):
@@ -131,6 +132,7 @@ class SplitTests(TenantAPIMixin, APITestCase):
             username=username, email=f"{username}@example.com", password="pass12345", role=role
         )
         MemberProfile.objects.get_or_create(user=user)
+        enrol(user)
         return user
 
     def _make_split(self, user=None, weekday=None, muscles=None):
@@ -273,3 +275,48 @@ class SplitTests(TenantAPIMixin, APITestCase):
 
         denied = self.client.get(f"/api/workouts/splits/today/?member={self.other.pk}")
         self.assertEqual(denied.status_code, 403)
+
+
+class ExerciseDeleteTests(TenantAPIMixin, APITestCase):
+    """PROTECT on logs and split entries: removing an exercise would erase a
+    member's progress history and the plans that name it. The refusal is a
+    400, not a ProtectedError escaping as a 500."""
+
+    def setUp(self):
+        # The catalogue is shared by every gym, so platform staff maintain it;
+        # a gym admin is refused before a delete gets this far.
+        self.staff = User.objects.create_user(
+            username="ex_staff", email="ex_staff@example.com", password="pass12345", is_staff=True
+        )
+        self.member = User.objects.create_user(
+            username="ex_member", email="ex_member@example.com", password="pass12345", role=Role.MEMBER
+        )
+        MemberProfile.objects.get_or_create(user=self.member)
+        self.exercise = Exercise.objects.create(name="Delete-test Deadlift")
+        self.client.force_authenticate(self.staff)
+
+    def url(self):
+        return f"/api/workouts/exercises/{self.exercise.id}/"
+
+    def test_an_exercise_with_logged_sets_cannot_be_deleted(self):
+        session = WorkoutSession.objects.create(user=self.member)
+        log = WorkoutLog.objects.create(
+            session=session, exercise=self.exercise, set_number=1, reps=5, weight=100
+        )
+        resp = self.client.delete(self.url())
+        self.assertEqual(resp.status_code, 400)
+        self.assertTrue(Exercise.objects.filter(pk=self.exercise.pk).exists())
+        self.assertTrue(WorkoutLog.objects.filter(pk=log.pk, exercise=self.exercise).exists())
+
+    def test_an_exercise_in_a_split_cannot_be_deleted(self):
+        split = WorkoutSplit.objects.create(user=self.member, name="Pull day")
+        day = SplitDay.objects.create(split=split, weekday=0, target_muscles=["Back"])
+        entry = SplitExercise.objects.create(day=day, exercise=self.exercise, order=1, target_sets=3)
+        resp = self.client.delete(self.url())
+        self.assertEqual(resp.status_code, 400)
+        self.assertTrue(SplitExercise.objects.filter(pk=entry.pk, exercise=self.exercise).exists())
+
+    def test_an_unused_exercise_can_be_deleted(self):
+        resp = self.client.delete(self.url())
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(Exercise.objects.filter(pk=self.exercise.pk).exists())

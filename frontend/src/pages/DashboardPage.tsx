@@ -33,7 +33,9 @@ export default function DashboardPage() {
       <div className="mb-6 empty:mb-0">
         <PRCelebration />
       </div>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+      {/* `grid-cols-1` below lg: with no column count there, the one implicit
+          column sized to its widest content and pushed a phone's page sideways. */}
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
         <div className="flex flex-col gap-6">
           <CheckInButton />
           {/* Renders nothing unless a survey is actually pending, so it

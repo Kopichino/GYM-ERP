@@ -28,6 +28,8 @@ from rest_framework.test import APITestCase
 from accounts.models import MemberProfile, Role
 from billing.models import Plan
 from expenses.models import Expense, ExpenseCategory
+from nutrition.models import FoodItem
+from workouts.models import Exercise
 
 from . import context
 from .models import Membership, Organisation, Tenant
@@ -208,6 +210,97 @@ class ScopedWriteTests(TwoGyms):
         self.assertEqual(plan.organisation_id, self.org_b.pk)
 
 
+class SharedCatalogueWriteTests(TwoGyms):
+    """The exercise and food catalogues have no tenant column: every gym reads
+    the same rows. A gym's admin passes every permission class at their own
+    gym, so without a stricter rule their edit lands in every other gym's
+    workout logs and diet plan totals.
+
+    Only platform staff -- `is_staff`, the flag that already gates Django's
+    /admin/ -- maintain them. Each refusal checks what gym B sees before the
+    status code, so a regression reads as the cross-gym change it is.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.exercise = Exercise.objects.create(name="Shared Bench Press")
+        self.food = FoodItem.objects.create(name="Shared Oats", calories=Decimal("389"))
+
+    def test_an_admin_of_one_gym_cannot_rename_a_shared_exercise(self):
+        base = self.as_(self.admin_a, self.gym_a)
+        resp = self.client.patch(
+            f"{base}/workouts/exercises/{self.exercise.pk}/",
+            {"name": "Renamed by gym A"},
+            format="json",
+        )
+
+        base = self.as_(self.admin_b, self.gym_b)
+        seen_by_b = [row["name"] for row in self.client.get(f"{base}/workouts/exercises/").data]
+        self.assertIn("Shared Bench Press", seen_by_b)
+        self.assertEqual(resp.status_code, 403)
+
+    def test_an_admin_of_one_gym_cannot_change_a_shared_foods_macros(self):
+        base = self.as_(self.admin_a, self.gym_a)
+        resp = self.client.patch(
+            f"{base}/nutrition/foods/{self.food.pk}/", {"calories": "1"}, format="json"
+        )
+
+        base = self.as_(self.admin_b, self.gym_b)
+        seen_by_b = self.client.get(f"{base}/nutrition/foods/{self.food.pk}/").data
+        self.assertEqual(Decimal(seen_by_b["calories"]), Decimal("389"))
+        self.assertEqual(resp.status_code, 403)
+
+    def test_an_admin_of_one_gym_cannot_delete_shared_entries(self):
+        base = self.as_(self.admin_a, self.gym_a)
+        exercise_resp = self.client.delete(f"{base}/workouts/exercises/{self.exercise.pk}/")
+        food_resp = self.client.delete(f"{base}/nutrition/foods/{self.food.pk}/")
+
+        base = self.as_(self.admin_b, self.gym_b)
+        exercises_b = [row["id"] for row in self.client.get(f"{base}/workouts/exercises/").data]
+        foods_b = [row["id"] for row in self.client.get(f"{base}/nutrition/foods/").data]
+        self.assertIn(self.exercise.pk, exercises_b)
+        self.assertIn(self.food.pk, foods_b)
+        self.assertEqual(exercise_resp.status_code, 403)
+        self.assertEqual(food_resp.status_code, 403)
+
+    def test_an_admin_of_one_gym_cannot_add_to_the_shared_catalogues(self):
+        base = self.as_(self.admin_a, self.gym_a)
+        exercise_resp = self.client.post(f"{base}/workouts/exercises/", {"name": "Gym A special"})
+        food_resp = self.client.post(
+            f"{base}/nutrition/foods/", {"name": "Gym A shake", "calories": "200"}
+        )
+
+        self.assertFalse(Exercise.objects.filter(name="Gym A special").exists())
+        self.assertFalse(FoodItem.objects.filter(name="Gym A shake").exists())
+        self.assertEqual(exercise_resp.status_code, 403)
+        self.assertEqual(food_resp.status_code, 403)
+
+    def test_platform_staff_still_maintain_the_catalogues(self):
+        """Otherwise the refusals above would pass with writes broken for
+        everyone. Staff need no membership at the gym in the URL: the rows
+        belong to the platform, not to that gym."""
+        staff = make_user("catalogue_staff")
+        staff.is_staff = True
+        staff.save()
+
+        base = self.as_(staff, self.gym_a)
+        resp = self.client.patch(
+            f"{base}/workouts/exercises/{self.exercise.pk}/",
+            {"name": "Flat Bench Press"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.exercise.refresh_from_db()
+        self.assertEqual(self.exercise.name, "Flat Bench Press")
+
+    def test_every_gym_still_reads_the_catalogues(self):
+        for admin, gym in ((self.admin_a, self.gym_a), (self.admin_b, self.gym_b)):
+            base = self.as_(admin, gym)
+            with self.subTest(gym=gym.slug):
+                self.assertEqual(self.client.get(f"{base}/workouts/exercises/").status_code, 200)
+                self.assertEqual(self.client.get(f"{base}/nutrition/foods/").status_code, 200)
+
+
 class ModelRegistryTests(APITestCase):
     """Every tenant-owned model actually uses a scoped manager.
 
@@ -222,6 +315,9 @@ class ModelRegistryTests(APITestCase):
         # Who a person is, across every gym they belong to.
         "accounts.User",
         "accounts.MemberProfile",
+        # How that person signs in, which covers every gym they belong to.
+        "accounts.MfaDevice",
+        "accounts.MfaRecoveryCode",
         "tenancy.Organisation",
         "tenancy.Tenant",
         "tenancy.Membership",

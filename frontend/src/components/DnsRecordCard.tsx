@@ -30,10 +30,21 @@ export function RecordField({ label, value }: { label: string; value: string }) 
         {label}
       </p>
       <div className="flex items-center gap-2">
-        <code className="min-w-0 flex-1 truncate rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-xs text-[var(--color-text)]">
+        {/* Truncated to fit; the whole value is on hover and is what gets copied. */}
+        <code
+          title={value}
+          className="min-w-0 flex-1 truncate rounded-md border border-[var(--color-border)] bg-[var(--color-surface-2)] px-2 py-1.5 text-xs text-[var(--color-text)]"
+        >
           {value}
         </code>
-        <button onClick={copy} className={ghostButtonClass}>
+        {/* Named for its field. Three buttons that all read "Copy" leave a
+            screen reader -- or anything else reading the page -- to guess which
+            one copies the host; the audit's own check took the first for it. */}
+        <button
+          onClick={copy}
+          aria-label={`${copied ? "Copied" : "Copy"} ${label}`}
+          className={ghostButtonClass}
+        >
           {copied ? "Copied" : "Copy"}
         </button>
       </div>

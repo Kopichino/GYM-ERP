@@ -21,6 +21,7 @@ from attendance.models import CheckInOut
 from billing.models import Payment, PaymentStatus
 from billing.services import get_latest_completed_payment
 from schedule_app.models import BookingStatus, ClassBooking, ClassSession
+from tenancy.people import members_here, trainers_here
 
 TWO_DP = Decimal("0.01")
 # Every plan is normalised to a month of this length so a yearly and a monthly
@@ -40,7 +41,7 @@ def active_members(on=None):
     """
     on = on or timezone.localdate()
     live = []
-    for member in User.objects.filter(role=Role.MEMBER).select_related("profile"):
+    for member in members_here().select_related("profile"):
         payment = get_latest_completed_payment(member)
         if payment and payment.period_end >= on:
             live.append((member, payment))
@@ -82,7 +83,7 @@ def churn_rate(start, end, grace_days=7):
     lapsed = 0
     considered = 0
 
-    for member in User.objects.filter(role=Role.MEMBER):
+    for member in members_here():
         last = (
             Payment.objects.filter(member=member, status=PaymentStatus.COMPLETED)
             .order_by("-period_end")
@@ -108,7 +109,7 @@ def pt_utilisation(start, end):
     from pt.services import utilisation
 
     booked = offered = 0.0
-    for trainer in User.objects.filter(role=Role.TRAINER):
+    for trainer in trainers_here():
         trainer_booked, trainer_offered = utilisation(trainer, start, end)
         booked += trainer_booked
         offered += trainer_offered
@@ -160,9 +161,9 @@ def summary(start, end):
         "from": start,
         "to": end,
         "active_members": len(live),
-        "paused_members": User.objects.filter(
-            role=Role.MEMBER, profile__membership_status=MembershipStatus.PAUSED
-        ).count(),
+        "paused_members": members_here()
+        .filter(profile__membership_status=MembershipStatus.PAUSED)
+        .count(),
         "mrr": str(mrr(on)),
         "arpm": str(arpm(on)),
         "collected": str(_money(collected)),

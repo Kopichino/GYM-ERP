@@ -1,13 +1,12 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 
 from tenancy.managers import TenantManager, UnscopedManager
 
-from instructors.models import Instructor
-
 
 class ClassSession(models.Model):
-    """An upcoming/scheduled class, e.g. "Yoga, Mon 6pm with Instructor X"."""
+    """An upcoming/scheduled class, e.g. "Yoga, Mon 6pm with Ravi"."""
     # The branch this belongs to. Operational data is isolated per building:
     # "who came in yesterday" is a question about a gym, not about a brand.
     # Nullable for now; the backfill fills it and a later migration requires it.
@@ -18,8 +17,17 @@ class ClassSession(models.Model):
     )
 
     title = models.CharField(max_length=150)
-    instructor = models.ForeignKey(
-        Instructor, on_delete=models.SET_NULL, null=True, blank=True, related_name="class_sessions"
+    #: The trainer running the class -- their own account. This used to point
+    #: at a separate instructor profile, but it is the same person who logs in,
+    #: takes the roster and marks who turned up, so a second record naming them
+    #: was only ever something to keep in step. Null for a class nobody in
+    #: particular runs.
+    trainer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="classes_run",
     )
     date = models.DateField()
     start_time = models.TimeField()
@@ -35,6 +43,17 @@ class ClassSession(models.Model):
 
     class Meta:
         ordering = ["date", "start_time"]
+
+    def clean(self):
+        """A class ends after it starts, on its one date.
+
+        The API serializer holds the same rule. This is for saves that go
+        through Django's own model validation instead -- the Django admin's
+        form -- so a backwards class cannot be entered there either.
+        """
+        super().clean()
+        if self.start_time is not None and self.end_time is not None and self.end_time <= self.start_time:
+            raise ValidationError({"end_time": "A class has to end after it starts."})
 
     def __str__(self):
         return f"{self.title} - {self.date} {self.start_time}"

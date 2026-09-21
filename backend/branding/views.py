@@ -2,6 +2,7 @@ from django.conf import settings
 from django.db import transaction
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
@@ -21,6 +22,10 @@ class PublicBrandingView(APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = []
+    # Its own bucket. Every page load asks for this, signed in or not; on the
+    # shared anonymous bucket it used up the allowance sign-in refreshes needed.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "public"
 
     def get(self, request):
         branding = Branding.current()
@@ -40,6 +45,7 @@ class PublicBrandingView(APIView):
                     "address": "",
                     "website": "",
                     "instagram": "",
+                    "opening_hours": "",
                     "configured": False,
                 }
             )

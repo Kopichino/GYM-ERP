@@ -1,4 +1,5 @@
 import { api } from "../lib/api";
+import { fetchAll, fetchPage } from "../lib/pagination";
 
 export interface Plan {
   id: number;
@@ -11,6 +12,12 @@ export interface Plan {
 
 export type PaymentMethod = "cash" | "upi" | "bank_transfer" | "card" | "other";
 export type PaymentStatus = "completed" | "pending" | "failed" | "refunded";
+
+/** The invoice issued for a payment, carried on the payment row itself. */
+export interface InvoiceRef {
+  id: number;
+  number: string;
+}
 
 export interface Payment {
   id: number;
@@ -29,6 +36,8 @@ export interface Payment {
   external_reference: string;
   gateway: string;
   created_at: string;
+  /** Null for a payment recorded before invoicing existed. */
+  invoice: InvoiceRef | null;
 }
 
 export interface MyPayment {
@@ -40,6 +49,7 @@ export interface MyPayment {
   paid_date: string;
   period_start: string;
   period_end: string;
+  invoice: InvoiceRef | null;
 }
 
 export interface MySubscription {
@@ -68,6 +78,17 @@ export async function fetchPlans() {
   return res.data.results;
 }
 
+/**
+ * The plans a sale can be made on, for the till's picker.
+ *
+ * Asked of the server rather than filtered here, so the picker and the checkout
+ * share one definition of "on sale" -- and read in full, so a gym with more
+ * than one page of plans still sees every one.
+ */
+export async function fetchSellablePlans() {
+  return fetchAll<Plan>("/billing/plans/", { sellable: 1 });
+}
+
 export async function createPlan(payload: Omit<Plan, "id">) {
   const res = await api.post<Plan>("/billing/plans/", payload);
   return res.data;
@@ -87,14 +108,14 @@ export async function fetchMySubscription() {
   return res.data;
 }
 
+/** A member's whole payment history. Their own, so it is small enough to read in full. */
 export async function fetchMyPayments() {
-  const res = await api.get<{ results: MyPayment[] }>("/billing/my-payments/");
-  return res.data.results;
+  return fetchAll<MyPayment>("/billing/my-payments/");
 }
 
-export async function fetchAdminMemberBilling() {
-  const res = await api.get<{ results: AdminMemberBilling[] }>("/billing/admin/members/");
-  return res.data.results;
+/** One page of the members' billing list; `count` is the total across all pages. */
+export async function fetchAdminMemberBilling(page = 1) {
+  return fetchPage<AdminMemberBilling>("/billing/admin/members/", page);
 }
 
 export async function downloadAdminMemberBillingExcel() {
@@ -109,11 +130,9 @@ export async function downloadAdminMemberBillingExcel() {
   window.URL.revokeObjectURL(url);
 }
 
-export async function fetchAdminPayments(memberId?: number) {
-  const res = await api.get<{ results: Payment[] }>("/billing/admin/payments/", {
-    params: memberId ? { member: memberId } : undefined,
-  });
-  return res.data.results;
+/** One page of the payments ledger, optionally for one member. */
+export async function fetchAdminPayments(memberId?: number, page = 1) {
+  return fetchPage<Payment>("/billing/admin/payments/", page, memberId ? { member: memberId } : {});
 }
 
 export interface RecordPaymentPayload {
@@ -232,13 +251,6 @@ export interface Invoice {
   tax_rate: string;
   is_interstate: boolean;
   place_of_supply: string;
-}
-
-export async function fetchInvoices(memberId?: number) {
-  const res = await api.get<{ results: Invoice[] }>("/invoices/", {
-    params: memberId ? { member: memberId } : undefined,
-  });
-  return res.data.results;
 }
 
 /** Opens the PDF in a new tab. The endpoint serves it inline. */

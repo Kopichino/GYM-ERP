@@ -29,7 +29,8 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
-from accounts.models import MembershipStatus, MemberProfile, Role, User
+from accounts import mfa
+from accounts.models import MembershipStatus, MemberProfile, MfaDevice, Role, User
 from tenancy import context
 from tenancy.models import Membership, Organisation, Tenant
 from announcements.models import Announcement
@@ -37,8 +38,7 @@ from attendance.models import CheckInMethod, CheckInOut
 from billing.models import DayPass, Discount, DiscountType, PaymentMethod, Plan
 from branding.models import Branding
 from billing.services import record_payment
-from commissions.models import CommissionBasis, CommissionRule
-from commissions.services import accrue_for_payment
+from commissions.models import CommissionRule
 from expenses.models import Expense, ExpenseCategory
 from gamification.models import Badge, GamificationProfile, MemberBadge, PersonalRecord
 from invoicing.models import Invoice
@@ -51,7 +51,6 @@ from bodystats.models import BodyMeasurement, GoalStatus, GoalType, MemberGoal
 from devices.models import Device, DeviceKind, generate_key
 from devices.services import record_punch
 from gallery.models import GalleryPost, MediaType
-from instructors.models import Instructor
 from schedule_app.models import ClassSession
 from schedule_app.services import book
 from feedback.models import Survey, SurveyResponse, Trigger
@@ -68,6 +67,11 @@ from workouts.models import (
 
 DEMO_DOMAIN = "ironcore.demo"
 PASSWORD = "IronDemo123!"
+#: One authenticator key shared by every demo account, printed at the end.
+#: Two-step sign-in is required, and a demo that stops at "set up your
+#: authenticator" for every role is not much of a demo. Published on purpose,
+#: exactly like the password above -- demo accounts only, never a real one.
+DEMO_MFA_SECRET = "JBSWY3DPEHPK3PXPIRONCOREDEMOKEY2"
 
 TODAY = date.today()
 
@@ -128,7 +132,6 @@ class Command(BaseCommand):
                 trainers = self._trainers()
                 members = self._members(trainers)
                 self._offers(plans)
-                self._commission_rules(trainers, plans)
                 self._billing(members, plans, admin)
                 self._invoices(members)
                 self._expenses(admin)
@@ -220,8 +223,6 @@ class Command(BaseCommand):
         Enquiry.objects.filter(created_by__in=demo_users).delete()
         ClassSession.objects.filter(title__startswith="[demo] ").delete()
         Announcement.objects.filter(title__startswith="[demo] ").delete()
-        Instructor.objects.filter(user__in=demo_users).delete()
-        Instructor.objects.filter(name__startswith="[demo] ").delete()
         GalleryPost.objects.filter(uploader__in=demo_users).delete()
         # Payments cascade from the member; plans are shared so only demo ones go.
         demo_users.delete()
@@ -246,6 +247,8 @@ class Command(BaseCommand):
             address="12 Anchor Street\nAndheri West\nMumbai 400053",
             website="https://ironcore.demo",
             instagram="ironcore.gym",
+            # Read by the public website's footer, one row per line.
+            opening_hours="Monday to Friday: 5:30 - 23:00\nSaturday: 6:00 - 21:00\nSunday: 7:00 - 20:00",
             gstin="27AAAAA0000A1Z5",
             state="Maharashtra",
         )
@@ -307,6 +310,17 @@ class Command(BaseCommand):
             tenant=context.require(),
             role=role,
         )
+        # Add DEMO_MFA_SECRET to an authenticator app once and it signs in as
+        # any demo account.
+        MfaDevice.objects.update_or_create(
+            user=user,
+            defaults={
+                "secret": DEMO_MFA_SECRET,
+                "pending_secret": "",
+                "confirmed_at": timezone.now(),
+                "last_used_step": None,
+            },
+        )
         return user
 
     def _admin(self):
@@ -322,28 +336,9 @@ class Command(BaseCommand):
         trainers = []
         for handle, first, last, specialty, bio in specs:
             user = self._account(handle, first, last, Role.TRAINER, phone="+91 98200 20000")
-            instructor, _ = Instructor.objects.update_or_create(
-                user=user,
-                defaults={
-                    "name": f"{first} {last}",
-                    "specialty": specialty,
-                    "bio": bio,
-                    "active": True,
-                },
-            )
-            if not instructor.photo:
-                instructor.photo.save(f"{handle}.png", png((36, 36, 48)), save=True)
-            trainers.append((user, instructor))
-
-        # A guest instructor with no login, to show that the two are separable.
-        Instructor.objects.update_or_create(
-            name="[demo] Sana Kapoor",
-            defaults={
-                "specialty": "Guest -- Spin",
-                "bio": "Visiting instructor. Content-only profile with no login account.",
-                "active": True,
-            },
-        )
+            # (user, specialty): the specialty is only used in the summary printed
+            # at the end -- there is no instructor profile to hold it any more.
+            trainers.append((user, specialty))
         return trainers
 
     def _members(self, trainers):
@@ -449,34 +444,6 @@ class Command(BaseCommand):
             if created and plan_names:
                 discount.plans.set([plans[name] for name in plan_names if name in plans])
 
-    # ----------------------------------------------------------- commissions
-
-    def _commission_rules(self, trainers, plans):
-        """Rules must exist before the payments are recorded: entries accrue at
-        payment time, exactly as they will in production."""
-        if CommissionRule.objects.exists():
-            return
-        # A gym-wide floor, a per-trainer override, then the most specific
-        # trainer+plan rule -- so the resolver has something to choose between.
-        CommissionRule.objects.create(
-            trainer=None, plan=None, basis=CommissionBasis.PERCENT, rate=Decimal("5")
-        )
-        first_trainer = trainers[0][0]
-        CommissionRule.objects.create(
-            trainer=first_trainer, plan=None, basis=CommissionBasis.PERCENT, rate=Decimal("10")
-        )
-        if "Quarterly" in plans:
-            CommissionRule.objects.create(
-                trainer=first_trainer,
-                plan=plans["Quarterly"],
-                basis=CommissionBasis.FLAT,
-                rate=Decimal("750"),
-            )
-        if len(trainers) > 1:
-            CommissionRule.objects.create(
-                trainer=trainers[1][0], plan=None, basis=CommissionBasis.FLAT, rate=Decimal("400")
-            )
-
     # -------------------------------------------------------------- invoices
 
     def _invoices(self, members):
@@ -488,9 +455,6 @@ class Command(BaseCommand):
         )
         for payment in payments:
             issue_invoice(payment)
-            # Payments recorded before a rule existed would carry no commission;
-            # accrual is idempotent, so re-running this is safe.
-            accrue_for_payment(payment)
 
     # -------------------------------------------------------------- expenses
 
@@ -902,21 +866,21 @@ class Command(BaseCommand):
             )
 
     def _classes(self, trainers):
-        ravi_profile, meera_profile = trainers[0][1], trainers[1][1]
+        ravi, meera = trainers[0][0], trainers[1][0]
         specs = [
-            ("[demo] Morning HIIT", ravi_profile, 1, time(7, 0), time(8, 0), 12),
-            ("[demo] Strength Basics", ravi_profile, 2, time(18, 30), time(19, 30), 8),
-            ("[demo] Sunrise Yoga", meera_profile, 2, time(6, 30), time(7, 30), None),
-            ("[demo] Mobility Clinic", meera_profile, 4, time(19, 0), time(20, 0), 2),
-            ("[demo] Saturday Circuit", ravi_profile, 6, time(9, 0), time(10, 0), 15),
-            ("[demo] Last week's HIIT", ravi_profile, -5, time(7, 0), time(8, 0), 12),
+            ("[demo] Morning HIIT", ravi, 1, time(7, 0), time(8, 0), 12),
+            ("[demo] Strength Basics", ravi, 2, time(18, 30), time(19, 30), 8),
+            ("[demo] Sunrise Yoga", meera, 2, time(6, 30), time(7, 30), None),
+            ("[demo] Mobility Clinic", meera, 4, time(19, 0), time(20, 0), 2),
+            ("[demo] Saturday Circuit", ravi, 6, time(9, 0), time(10, 0), 15),
+            ("[demo] Last week's HIIT", ravi, -5, time(7, 0), time(8, 0), 12),
         ]
         classes = {}
-        for title, instructor, offset, start, end, capacity in specs:
+        for title, trainer, offset, start, end, capacity in specs:
             session, _ = ClassSession.objects.update_or_create(
                 title=title,
                 defaults={
-                    "instructor": instructor,
+                    "trainer": trainer,
                     "date": TODAY + timedelta(days=offset),
                     "start_time": start,
                     "end_time": end,
@@ -1334,6 +1298,9 @@ class Command(BaseCommand):
         out.write(self.style.SUCCESS(line))
         out.write("")
         out.write(f"  Every account below uses the password:  {PASSWORD}")
+        out.write(f"  ...and two-step sign-in with the authenticator key:  {DEMO_MFA_SECRET}")
+        out.write("  Add that key to any authenticator app once, or open this on a phone:")
+        out.write(f"    {mfa.provisioning_uri(DEMO_MFA_SECRET, 'demo accounts')}")
         out.write("")
 
         out.write(self.style.MIGRATE_HEADING("  ADMIN"))
@@ -1341,10 +1308,10 @@ class Command(BaseCommand):
         out.write("")
 
         out.write(self.style.MIGRATE_HEADING("  TRAINERS"))
-        for user, instructor in trainers:
+        for user, specialty in trainers:
             roster = user.assigned_members.count()
             out.write(
-                f"    {user.username:<20}{user.get_full_name()} -- {instructor.specialty}, "
+                f"    {user.username:<20}{user.get_full_name()} -- {specialty}, "
                 f"{roster} assigned member(s)"
             )
         out.write("")

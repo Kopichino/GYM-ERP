@@ -5,6 +5,8 @@ import {
   fetchReferralPrograms,
   fetchReferrals,
   rewardReferral,
+  updateReferralProgram,
+  type ReferralProgram,
   type ReferralStatus,
 } from "../../api/referrals";
 import {
@@ -20,6 +22,8 @@ import {
   tableHeadRowClass,
   tableRowClass,
 } from "../../components/ui";
+import { useSubmitOnce } from "../../hooks/useSubmitOnce";
+import { serverMessage } from "../../lib/apiError";
 import { railColor } from "../../lib/theme";
 
 const STATUS_COLOR: Record<ReferralStatus, string> = {
@@ -34,31 +38,70 @@ const STATUS_LABEL: Record<ReferralStatus, string> = {
   joined: "Joined and paid",
 };
 
+const PROGRAMS_QUERY_KEY = ["referrals", "programs"];
+
+/** The reward a brand-new offer starts from, before any offer has been saved. */
+const DEFAULT_DAYS = "15";
+
+/** Word for word what the API says about an offer of no days. */
+const AT_LEAST_ONE_DAY = "An offer has to give at least 1 free day.";
+
 export default function AdminReferralsPage() {
   const queryClient = useQueryClient();
-  const [days, setDays] = useState("15");
-  const [blurb, setBlurb] = useState("");
+  // Unsaved edits. Null means "show the offer that is running" -- the form used
+  // to start from a hard-coded 15 and an empty message on every visit, so a
+  // saved offer looked lost after a reload and the next save wiped its message.
+  const [draft, setDraft] = useState<{ days: string; blurb: string } | null>(null);
   const [error, setError] = useState("");
+  const submitOnce = useSubmitOnce();
 
   const { data: referrals, isLoading, isError } = useQuery({
     queryKey: ["referrals", "all"],
     queryFn: fetchReferrals,
   });
-  const { data: programs } = useQuery({
-    queryKey: ["referrals", "programs"],
+  const { data: programs, isLoading: programsLoading } = useQuery({
+    queryKey: PROGRAMS_QUERY_KEY,
     queryFn: fetchReferralPrograms,
+    // Re-read whenever the page opens. The form shows the running offer, so an
+    // offer changed a moment ago -- by another admin -- must not come back from
+    // the cache and be saved over the top of that change.
+    staleTime: 0,
   });
 
   const active = programs?.find((p) => p.is_active);
+  const days = draft?.days ?? (active ? String(active.reward_days) : DEFAULT_DAYS);
+  const blurb = draft?.blurb ?? active?.blurb ?? "";
+  // Checked here as well as by the server, so a bad number is explained before Save.
+  const daysProblem = !/^\d+$/.test(days)
+    ? "Free days has to be a whole number."
+    : Number(days) < 1
+      ? AT_LEAST_ONE_DAY
+      : "";
+  const edit = (change: Partial<{ days: string; blurb: string }>) => setDraft({ days, blurb, ...change });
+
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["referrals"] });
 
   const saveProgram = useMutation({
-    mutationFn: () => createReferralProgram({ reward_days: Number(days), blurb }),
-    onSuccess: () => {
+    // The running offer is edited in place; a new one is created only when none
+    // is running. Saving used to create every time, adding a row per save.
+    mutationFn: () => {
+      const payload = { reward_days: Number(days), blurb };
+      return active ? updateReferralProgram(active.id, payload) : createReferralProgram(payload);
+    },
+    onSuccess: (saved) => {
+      // Put the saved offer straight into the list, so the form does not show the
+      // old values for a moment while the list reloads.
+      queryClient.setQueryData<ReferralProgram[]>(PROGRAMS_QUERY_KEY, (rows = []) => {
+        const others = rows
+          .filter((p) => p.id !== saved.id)
+          .map((p) => (saved.is_active ? { ...p, is_active: false } : p));
+        return [saved, ...others];
+      });
+      setDraft(null);
       setError("");
       invalidate();
     },
-    onError: () => setError("Could not save that offer."),
+    onError: (err) => setError(serverMessage(err, "Could not save that offer.")),
   });
 
   const pay = useMutation({
@@ -83,7 +126,7 @@ export default function AdminReferralsPage() {
           {active
             ? `Running now: ${active.reward_days} free days per referral.`
             : "No offer is running — members can still share their code, but nothing is owed."}{" "}
-          Saving a new offer replaces the current one.
+          {active ? "Saving changes the offer that is running." : "Saving starts this offer."}
         </p>
         <div className="flex flex-wrap gap-3">
           <label className="text-xs text-[var(--color-text-muted)]">
@@ -91,8 +134,9 @@ export default function AdminReferralsPage() {
             <Input
               type="number"
               min={1}
+              aria-invalid={Boolean(daysProblem)}
               value={days}
-              onChange={(e) => setDays(e.target.value)}
+              onChange={(e) => edit({ days: e.target.value })}
               className="mt-1 w-28"
             />
           </label>
@@ -101,19 +145,21 @@ export default function AdminReferralsPage() {
             <Input
               placeholder="Bring a friend, train 15 days on us."
               value={blurb}
-              onChange={(e) => setBlurb(e.target.value)}
+              onChange={(e) => edit({ blurb: e.target.value })}
               className="mt-1"
             />
           </label>
           <Button
-            onClick={() => saveProgram.mutate()}
-            disabled={!days || saveProgram.isPending}
+            onClick={() => submitOnce((settled) => saveProgram.mutate(undefined, { onSettled: settled }))}
+            // Not before the offers have loaded: until then the page cannot tell
+            // an edit from a first offer, and would start a second one.
+            disabled={Boolean(daysProblem) || programsLoading || saveProgram.isPending}
             className="self-end"
           >
             {saveProgram.isPending ? "Saving..." : "Save offer"}
           </Button>
         </div>
-        <ErrorText>{error}</ErrorText>
+        <ErrorText>{daysProblem || error}</ErrorText>
       </Card>
 
       <Card accent={railColor(4)}>

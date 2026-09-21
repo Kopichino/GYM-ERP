@@ -13,6 +13,8 @@ export interface Branding {
   address: string;
   website: string;
   instagram: string;
+  /** One line per row, e.g. "Monday to Friday: 5:30 - 23:00". Shown on the website. */
+  opening_hours: string;
   /** False when no gym has filled the branding page in yet. */
   configured: boolean;
 }

@@ -487,3 +487,49 @@ export const tableHeadRowClass = "border-b border-[var(--color-border)]";
 export const tableHeadCellClass = "py-2 pr-4";
 export const tableRowClass = "border-b border-[var(--color-border)] text-[var(--color-text)] last:border-none";
 export const tableCellClass = "py-2 pr-4";
+
+/**
+ * Previous / next for a paginated list, with the range and the total on show,
+ * so a page is never mistaken for the whole list. Renders nothing when
+ * everything fits on one page.
+ */
+export function Pager({
+  page,
+  pageSize,
+  count,
+  onPage,
+  noun = "rows",
+}: {
+  page: number;
+  pageSize: number;
+  count: number;
+  onPage: (page: number) => void;
+  noun?: string;
+}) {
+  const pages = Math.max(1, Math.ceil(count / pageSize));
+  if (pages <= 1) return null;
+  const first = (page - 1) * pageSize + 1;
+  const last = Math.min(page * pageSize, count);
+  const pagerButton = `${ghostButtonClass} disabled:cursor-not-allowed disabled:opacity-50`;
+  return (
+    <nav
+      aria-label={`${noun} pages`}
+      className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--color-text-muted)]"
+    >
+      <span>
+        {first}-{last} of {count} {noun}
+      </span>
+      <span className="flex items-center gap-2">
+        <button type="button" className={pagerButton} onClick={() => onPage(page - 1)} disabled={page <= 1}>
+          Previous
+        </button>
+        <span>
+          Page {page} of {pages}
+        </span>
+        <button type="button" className={pagerButton} onClick={() => onPage(page + 1)} disabled={page >= pages}>
+          Next
+        </button>
+      </span>
+    </nav>
+  );
+}

@@ -3,13 +3,19 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
+from core.dates import read_window
 from core.permissions import IsAdmin
+from core.views import RefuseProtectedDeleteMixin
 
 from .models import Expense, ExpenseCategory
 from .serializers import ExpenseCategorySerializer, ExpenseSerializer
 
 
-class ExpenseCategoryViewSet(ModelViewSet):
+class ExpenseCategoryViewSet(RefuseProtectedDeleteMixin, ModelViewSet):
+    protected_delete_message = (
+        "This category has expenses recorded against it, so it can't be deleted. "
+        "Deactivate it instead."
+    )
 
     def get_queryset(self):
         # Built per request, not at import: the scoped manager needs a
@@ -31,10 +37,13 @@ class ExpenseViewSet(ModelViewSet):
         params = self.request.query_params
         if params.get("category"):
             queryset = queryset.filter(category_id=params["category"])
-        if params.get("from"):
-            queryset = queryset.filter(spent_on__gte=params["from"])
-        if params.get("to"):
-            queryset = queryset.filter(spent_on__lte=params["to"])
+        # Parsed before it reaches the ORM: a malformed date was a 500 there,
+        # and a `to` before `from` quietly listed nothing.
+        start, end = read_window(params)
+        if start:
+            queryset = queryset.filter(spent_on__gte=start)
+        if end:
+            queryset = queryset.filter(spent_on__lte=end)
         return queryset
 
     def perform_create(self, serializer):

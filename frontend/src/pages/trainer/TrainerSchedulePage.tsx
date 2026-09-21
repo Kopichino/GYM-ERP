@@ -23,6 +23,8 @@ import {
   tableHeadRowClass,
   tableRowClass,
 } from "../../components/ui";
+import { serverMessage } from "../../lib/apiError";
+import { classTimeProblem } from "../../lib/classTimes";
 import { fadeUp, staggerContainer } from "../../lib/motion";
 import { railColor } from "../../lib/theme";
 import { askConfirm } from "../../store/confirmStore";
@@ -47,6 +49,9 @@ export default function TrainerSchedulePage() {
     queryFn: () => fetchClassSessions(true),
   });
 
+  // Said as soon as both times are in, rather than after a round trip.
+  const timeProblem = classTimeProblem(form.start_time, form.end_time);
+
   const addClass = useMutation({
     mutationFn: () =>
       createClassSession({
@@ -56,15 +61,16 @@ export default function TrainerSchedulePage() {
         end_time: form.end_time,
         capacity: form.capacity ? Number(form.capacity) : null,
         description: form.description,
-        // The backend stamps the signed-in trainer as the instructor.
-        instructor: null,
+        // The backend stamps the signed-in trainer onto the class.
+        trainer: null,
       }),
     onSuccess: () => {
       setForm(emptyForm);
       setError("");
       queryClient.invalidateQueries({ queryKey: ["trainer", "classes"] });
     },
-    onError: () => setError("Could not create that class. Check the date and times."),
+    onError: (err) =>
+      setError(serverMessage(err, "Could not create that class. Check the date and times.")),
   });
 
   const removeClass = useMutation({
@@ -88,6 +94,7 @@ export default function TrainerSchedulePage() {
           />
           <Input
             type="date"
+            aria-label="Date"
             value={form.date}
             onChange={(e) => setForm({ ...form, date: e.target.value })}
           />
@@ -99,15 +106,19 @@ export default function TrainerSchedulePage() {
           />
           <Input
             type="time"
+            aria-label="Start time"
             value={form.start_time}
             onChange={(e) => setForm({ ...form, start_time: e.target.value })}
           />
           <Input
             type="time"
+            aria-label="End time"
+            aria-invalid={Boolean(timeProblem)}
             value={form.end_time}
             onChange={(e) => setForm({ ...form, end_time: e.target.value })}
           />
         </div>
+        {timeProblem && <ErrorText>{timeProblem}</ErrorText>}
         <Textarea
           placeholder="Description"
           rows={2}
@@ -118,7 +129,14 @@ export default function TrainerSchedulePage() {
         <div className="mt-3 flex items-center gap-3">
           <Button
             onClick={() => addClass.mutate()}
-            disabled={!form.title || !form.date || !form.start_time || !form.end_time || addClass.isPending}
+            disabled={
+              !form.title ||
+              !form.date ||
+              !form.start_time ||
+              !form.end_time ||
+              Boolean(timeProblem) ||
+              addClass.isPending
+            }
           >
             {addClass.isPending ? "Adding..." : "Add class"}
           </Button>

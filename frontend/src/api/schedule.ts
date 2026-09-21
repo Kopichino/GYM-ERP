@@ -5,8 +5,9 @@ export type BookingStatus = "booked" | "waitlisted" | "cancelled" | "attended";
 export interface ClassSession {
   id: number;
   title: string;
-  instructor: number | null;
-  instructor_name: string | null;
+  /** The trainer running the class -- their own account, not a separate profile. */
+  trainer: number | null;
+  trainer_name: string | null;
   date: string;
   start_time: string;
   end_time: string;
@@ -28,7 +29,7 @@ export interface ClassBooking {
   date: string;
   start_time: string;
   end_time: string;
-  instructor_name: string | null;
+  trainer_name: string | null;
   status: BookingStatus;
   position: number | null;
   booked_at: string;
@@ -75,7 +76,7 @@ export async function fetchClassSessions(mineOnly = false) {
 /** The writable half of a class -- seat counts and my_status are computed. */
 export type ClassSessionInput = Pick<
   ClassSession,
-  "title" | "instructor" | "date" | "start_time" | "end_time" | "capacity" | "description"
+  "title" | "trainer" | "date" | "start_time" | "end_time" | "capacity" | "description"
 >;
 
 export async function createClassSession(payload: ClassSessionInput) {

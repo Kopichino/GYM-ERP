@@ -6,10 +6,12 @@ import OccupancyHeatmap from "../../components/OccupancyHeatmap";
 import {
   Card,
   ErrorState,
+  ErrorText,
   Input,
   LoadingState,
 } from "../../components/ui";
-import { isoDaysFromNow, todayIso } from "../../lib/dates";
+import { serverMessage } from "../../lib/apiError";
+import { dateRangeProblem, isoDaysFromNow, todayIso } from "../../lib/dates";
 import { railColor, statusColor, thresholdStatus } from "../../lib/theme";
 
 /** A headline number with the sentence that says what it counts. */
@@ -47,10 +49,14 @@ function Metric({
 export default function AdminOverviewPage() {
   const [from, setFrom] = useState(isoDaysFromNow(-29));
   const [to, setTo] = useState(todayIso());
+  // A backwards window is said next to the dates and never sent; it used to run
+  // quietly and fill the dashboard with numbers for no period at all.
+  const rangeProblem = dateRangeProblem(from, to);
 
-  const { data: kpis, isLoading, isError } = useQuery({
+  const { data: kpis, isLoading, isError, error } = useQuery({
     queryKey: ["kpis", from, to],
     queryFn: () => fetchKpis({ start: from, end: to }),
+    enabled: !rangeProblem,
   });
   const { data: occupancy } = useQuery({
     queryKey: ["occupancy", from, to],
@@ -83,6 +89,7 @@ export default function AdminOverviewPage() {
               <Input
                 type="date"
                 value={from}
+                max={to || undefined}
                 onChange={(e) => setFrom(e.target.value)}
                 className="mt-1"
               />
@@ -92,21 +99,28 @@ export default function AdminOverviewPage() {
               <Input
                 type="date"
                 value={to}
+                min={from || undefined}
+                aria-invalid={Boolean(rangeProblem)}
                 onChange={(e) => setTo(e.target.value)}
                 className="mt-1"
               />
             </label>
           </div>
         </div>
+        {rangeProblem && (
+          <div className="mt-2 flex justify-end">
+            <ErrorText>{rangeProblem}</ErrorText>
+          </div>
+        )}
       </Card>
 
-      {isLoading ? (
+      {rangeProblem ? null : isLoading ? (
         <Card>
           <LoadingState />
         </Card>
       ) : isError || !kpis ? (
         <Card>
-          <ErrorState />
+          <ErrorState>{serverMessage(error, "Something went wrong. Please try again.")}</ErrorState>
         </Card>
       ) : (
         <>

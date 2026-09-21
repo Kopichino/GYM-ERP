@@ -14,7 +14,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from core.testing import TenantAPIMixin
+from core.testing import TenantAPIMixin, enrol
 
 from accounts.models import MembershipStatus, MemberProfile, Role
 from attendance.models import CheckInOut
@@ -33,6 +33,7 @@ def make_user(username, role=Role.MEMBER, trainer=None, joined_days_ago=365):
         MemberProfile.objects.filter(user=user).update(
             trainer=trainer, join_date=timezone.localdate() - timedelta(days=joined_days_ago)
         )
+    enrol(user)
     return User.objects.get(pk=user.pk)
 
 

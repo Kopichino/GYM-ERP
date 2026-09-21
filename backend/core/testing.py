@@ -300,3 +300,25 @@ class TenantAPIMixin:
             user=user, tenant=self._tenant, role=role
         )
         return row
+
+
+def enrol(user, role=None):
+    """Give `user` standing at the tenant in scope, the way a real gym does.
+
+    Fixtures that create a member with `role=MEMBER` and nothing else predate
+    multi-tenancy: the product reads standing off `Membership` (see
+    `accounts.views._member_queryset` and `tenancy.people`), so a user with no
+    membership is nobody at any gym -- correctly invisible to this gym's
+    reports, call lists and reminders.
+
+    Does nothing outside a tenant scope, so suites that deliberately build a
+    signed-in stranger keep getting one.
+    """
+    from tenancy import context
+    from tenancy.models import Membership
+
+    tenant = context.get()
+    if tenant is None:
+        return user
+    Membership.objects.get_or_create(user=user, tenant=tenant, role=role or user.role)
+    return user

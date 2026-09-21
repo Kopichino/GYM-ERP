@@ -18,6 +18,7 @@ from .views import (
     MyPaymentListView,
     MySubscriptionView,
     PlanViewSet,
+    PublicPlanListView,
 )
 
 router = DefaultRouter()
@@ -27,6 +28,9 @@ router.register("discounts", DiscountViewSet, basename="discount")
 router.register("day-passes", DayPassViewSet, basename="daypass")
 
 urlpatterns = [
+    # For the public website. Not under `plans/`, where the router would read
+    # "public" as a plan id.
+    path("public/plans/", PublicPlanListView.as_view(), name="public-plans"),
     path("my-subscription/", MySubscriptionView.as_view(), name="my-subscription"),
     path("my-payments/", MyPaymentListView.as_view(), name="my-payments"),
     path("admin/members/", AdminMemberBillingListView.as_view(), name="admin-billing-members"),

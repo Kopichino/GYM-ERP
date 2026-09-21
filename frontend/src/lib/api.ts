@@ -26,11 +26,19 @@ const TENANT_SLUG = import.meta.env.VITE_TENANT_SLUG ?? "ironcore-main";
  * trainer portal showed "no members assigned to you".
  */
 const PLATFORM_ROUTES = [
-  "/auth/signup/",
+  // Not /auth/signup/: signing up is joining one particular gym, so it carries
+  // that gym's prefix like everything else. Sent unprefixed it resolved no gym,
+  // and the new account was created with standing nowhere -- it could log in
+  // and see nothing, and a referral code crashed it outright.
   "/auth/login/",
   "/auth/refresh/",
   "/auth/logout/",
   "/auth/me/",
+  // Forgetting, resetting and changing a password are about the person's
+  // account, which spans every gym they belong to.
+  "/auth/password/",
+  // Two-step sign-in is part of signing in, and belongs to the person as well.
+  "/auth/mfa/",
 ];
 
 function isPlatformRoute(path: string) {
@@ -70,7 +78,14 @@ api.interceptors.request.use((config) => {
 
 let refreshPromise: Promise<string | null> | null = null;
 
-async function refreshAccessToken(): Promise<string | null> {
+/**
+ * A new access token from the refresh cookie, or null.
+ *
+ * One request however many callers ask at once: the app's start-up check (which
+ * React's StrictMode runs twice in development) and every request that has just
+ * been answered 401 all wait on the same call.
+ */
+export async function refreshAccessToken(): Promise<string | null> {
   if (!refreshPromise) {
     refreshPromise = axios
       .post<{ access: string }>(`${API_URL}/auth/refresh/`, null, { withCredentials: true })
@@ -83,6 +98,24 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
+/**
+ * Requests whose 401 means "that sign-in attempt failed", not "the access token
+ * has expired". Refreshing and retrying can never rescue one, and doing it cost
+ * an extra refresh on every failed login and every signed-out page load.
+ */
+const SIGN_IN_ROUTES = [
+  "/auth/refresh/",
+  "/auth/login/",
+  "/auth/signup/",
+  "/auth/mfa/login/",
+  "/auth/password/forgot/",
+  "/auth/password/reset/",
+];
+
+function isSignInRequest(url: string | undefined) {
+  return SIGN_IN_ROUTES.some((route) => (url ?? "").includes(route));
+}
+
 interface RetriableConfig extends InternalAxiosRequestConfig {
   _retried?: boolean;
 }
@@ -91,7 +124,12 @@ api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const original = error.config as RetriableConfig | undefined;
-    if (error.response?.status === 401 && original && !original._retried) {
+    if (
+      error.response?.status === 401 &&
+      original &&
+      !original._retried &&
+      !isSignInRequest(original.url)
+    ) {
       original._retried = true;
       const newAccess = await refreshAccessToken();
       if (newAccess) {

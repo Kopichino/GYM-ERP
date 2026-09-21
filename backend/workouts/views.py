@@ -4,13 +4,14 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from accounts.models import User
-from core.permissions import access, IsAdminOrReadOnly, IsOwnerOrAdmin
+from core.permissions import access, IsOwnerOrAdmin, IsPlatformStaffOrReadOnly, IsTenantMember
+from core.views import RefuseProtectedDeleteMixin
 from core.scoping import may_write_for, visible_rows
+from tenancy.people import people_here_or_404
 
 from .models import (
     Exercise,
@@ -32,10 +33,12 @@ from .serializers import (
 )
 
 
-class ExerciseViewSet(ModelViewSet):
-    """Admin-managed catalog; members have read-only access to pick from
-    when logging a workout. Unpaginated -- the workout logger dropdown and
-    the muscle-group library both need the full catalog, not one page of it."""
+class ExerciseViewSet(RefuseProtectedDeleteMixin, ModelViewSet):
+    """Platform-managed catalog shared by every gym; gym staff and members
+    have read-only access to pick from when logging a workout. Only platform
+    staff edit it, since a rename here reaches every gym's logs at once.
+    Unpaginated -- the workout logger dropdown and the muscle-group library
+    both need the full catalog, not one page of it."""
 
 
     def get_queryset(self):
@@ -43,8 +46,11 @@ class ExerciseViewSet(ModelViewSet):
         # tenant in scope and a class attribute is evaluated on load.
         return Exercise.objects.all()
     serializer_class = ExerciseSerializer
-    permission_classes = [IsAdminOrReadOnly]
+    permission_classes = [IsPlatformStaffOrReadOnly]
     pagination_class = None
+    protected_delete_message = (
+        "This exercise has logged sets or is part of a split, so it can't be deleted."
+    )
 
 
 def _visible_to(caller):
@@ -57,7 +63,10 @@ def _visible_to(caller):
 
 class WorkoutSessionViewSet(ModelViewSet):
     serializer_class = WorkoutSessionSerializer
-    permission_classes = [IsAuthenticated, IsOwnerOrAdmin]
+    # Standing at the gym in the URL, not just a signed-in account: without it a
+    # person from another gym could read this gym's (empty) list for them and
+    # file new rows under a gym they do not belong to.
+    permission_classes = [IsTenantMember, IsOwnerOrAdmin]
 
     def get_queryset(self):
         qs = WorkoutSession.objects.prefetch_related("logs__exercise")
@@ -77,6 +86,15 @@ class WorkoutSessionViewSet(ModelViewSet):
         if member != self.request.user and not self._may_write_for(member):
             raise PermissionDenied("Cannot create a session for this member.")
         serializer.save(user=member)
+
+    def perform_update(self, serializer):
+        # A session stays with the member it was opened for. The object check
+        # only looks at the row as it is now, so a PATCH naming another member
+        # would otherwise hand them your history -- or you theirs.
+        member = serializer.validated_data.get("user", serializer.instance.user)
+        if member != serializer.instance.user:
+            raise PermissionDenied("A session can't be handed to another member.")
+        serializer.save()
 
     def _may_write_for(self, member):
         return may_write_for(access(self.request), member)
@@ -129,7 +147,10 @@ class WorkoutSessionViewSet(ModelViewSet):
 
 class WorkoutLogViewSet(ModelViewSet):
     serializer_class = WorkoutLogSerializer
-    permission_classes = [IsAuthenticated]
+    # Standing at the gym in the URL, not just a signed-in account: without it a
+    # person from another gym could read this gym's (empty) list for them and
+    # file new rows under a gym they do not belong to.
+    permission_classes = [IsTenantMember]
 
     def get_queryset(self):
         user = self.request.user
@@ -145,9 +166,17 @@ class WorkoutLogViewSet(ModelViewSet):
 
     def perform_create(self, serializer):
         session = serializer.validated_data["session"]
-        user = self.request.user
-        if not may_write_for(access(request), session.user):
+        if not may_write_for(access(self.request), session.user):
             raise PermissionDenied("Cannot log to another member's session.")
+        serializer.save()
+
+    def perform_update(self, serializer):
+        # A set stays in the session it was logged to. The object check only
+        # looks at the row as it is now, so a PATCH naming somebody else's
+        # session would otherwise write into their history.
+        session = serializer.validated_data.get("session", serializer.instance.session)
+        if session != serializer.instance.session:
+            raise PermissionDenied("A logged set can't be moved to another session.")
         serializer.save()
 
 
@@ -155,13 +184,16 @@ class _OwnedSplitMixin:
     """Splits belong to a member. Without `?member=` you act on your own;
     with it, a trainer or admin may read one of their people's."""
 
-    permission_classes = [IsAuthenticated]
+    # Standing at the gym in the URL, not just a signed-in account: without it a
+    # person from another gym could read this gym's (empty) list for them and
+    # file new rows under a gym they do not belong to.
+    permission_classes = [IsTenantMember]
 
     def _target_member(self):
         member_id = self.request.query_params.get("member")
         if not member_id or str(member_id) == str(self.request.user.id):
             return self.request.user
-        member = get_object_or_404(User, pk=member_id)
+        member = people_here_or_404(member_id)
         if not may_write_for(access(self.request), member):
             raise PermissionDenied("Not one of your members.")
         return member
@@ -241,7 +273,10 @@ class SplitDayViewSet(_OwnedSplitMixin, ModelViewSet):
         serializer.save()
 
     def perform_update(self, serializer):
-        self._check_owns(serializer.instance.split)
+        # The row as it stands is already this member's -- the queryset says so.
+        # The parent named in the body has to be as well, or a PATCH moves the
+        # row into somebody else's plan.
+        self._check_owns(serializer.validated_data.get("split", serializer.instance.split))
         serializer.save()
 
 
@@ -267,5 +302,8 @@ class SplitExerciseViewSet(_OwnedSplitMixin, ModelViewSet):
         serializer.save()
 
     def perform_update(self, serializer):
-        self._check_owns(serializer.instance.day)
+        # The row as it stands is already this member's -- the queryset says so.
+        # The parent named in the body has to be as well, or a PATCH moves the
+        # row into somebody else's plan.
+        self._check_owns(serializer.validated_data.get("day", serializer.instance.day))
         serializer.save()

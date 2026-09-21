@@ -418,7 +418,9 @@ export default function SplitPage() {
             </EmptyState>
           )}
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {/* `grid-cols-1` below md, so a day card is as wide as the phone rather
+              than as wide as its longest exercise picker option. */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {WEEKDAYS.map((_, weekday) => (
               <DayCard
                 key={weekday}

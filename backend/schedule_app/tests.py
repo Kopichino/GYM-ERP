@@ -8,7 +8,6 @@ from rest_framework.test import APITestCase
 from core.testing import TenantAPIMixin
 
 from accounts.models import MemberProfile, Role
-from instructors.models import Instructor
 
 from .models import BookingStatus, ClassBooking, ClassSession
 from .services import BookingError, book, cancel
@@ -24,10 +23,10 @@ def make_user(username, role=Role.MEMBER):
     return user
 
 
-def make_class(capacity=2, days_ahead=3, instructor=None):
+def make_class(capacity=2, days_ahead=3, trainer=None):
     return ClassSession.objects.create(
         title="Spin",
-        instructor=instructor,
+        trainer=trainer,
         date=date.today() + timedelta(days=days_ahead),
         start_time=time(18, 0),
         end_time=time(19, 0),
@@ -122,12 +121,10 @@ class BookingRuleTests(TenantAPIMixin, APITestCase):
 class BookingApiTests(TenantAPIMixin, APITestCase):
     def setUp(self):
         self.trainer = make_user("trainer", Role.TRAINER)
-        self.profile = Instructor.objects.create(user=self.trainer, name="Coach")
         self.other_trainer = make_user("trainer2", Role.TRAINER)
-        Instructor.objects.create(user=self.other_trainer, name="Other Coach")
         self.admin = make_user("admin", Role.ADMIN)
         self.member = make_user("member")
-        self.session = make_class(capacity=1, instructor=self.profile)
+        self.session = make_class(capacity=1, trainer=self.trainer)
 
     def test_member_books_and_cancels_over_the_api(self):
         self.client.force_authenticate(self.member)
@@ -220,10 +217,9 @@ class AttendanceEncodingTests(TenantAPIMixin, APITestCase):
 
     def setUp(self):
         self.trainer = make_user("enc_trainer", Role.TRAINER)
-        self.instructor = Instructor.objects.create(name="Enc Coach", user=self.trainer)
         self.session = ClassSession.objects.create(
             title="Spin",
-            instructor=self.instructor,
+            trainer=self.trainer,
             date=timezone.localdate() + timedelta(days=1),
             start_time=time(9),
             end_time=time(10),
@@ -294,3 +290,50 @@ class AttendanceEncodingTests(TenantAPIMixin, APITestCase):
         resp = self.client.post(f"/api/schedule/{self.session.pk}/attendance/", {}, format="json")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["marked_attended"], 0)
+
+
+class ClassTrainerTests(TenantAPIMixin, APITestCase):
+    """A class names the trainer's own account, not an instructor profile."""
+
+    def setUp(self):
+        self.trainer = make_user("class_coach", Role.TRAINER)
+        self.admin = make_user("class_admin", Role.ADMIN)
+        self.member = make_user("class_member")
+
+    def payload(self, **overrides):
+        data = {
+            "title": "Spin",
+            "date": str(date.today() + timedelta(days=2)),
+            "start_time": "18:00",
+            "end_time": "19:00",
+            "capacity": 10,
+            "description": "",
+            "trainer": None,
+        }
+        data.update(overrides)
+        return data
+
+    def test_a_trainer_creates_a_class_under_their_own_name(self):
+        self.client.force_authenticate(self.trainer)
+        resp = self.client.post("/api/schedule/", self.payload(), format="json")
+        self.assertEqual(resp.status_code, 201, resp.data)
+        self.assertEqual(resp.data["trainer"], self.trainer.id)
+        self.assertEqual(resp.data["trainer_name"], "class_coach")
+
+    def test_an_admin_cannot_put_someone_who_is_not_a_trainer_here_on_a_class(self):
+        """Otherwise a member's name -- or an account from another gym -- could
+        appear on this gym's timetable."""
+        self.client.force_authenticate(self.admin)
+        resp = self.client.post(
+            "/api/schedule/", self.payload(trainer=self.member.id), format="json"
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("trainer", resp.data)
+
+    def test_only_the_class_trainer_sees_its_roster(self):
+        other = make_user("other_class_coach", Role.TRAINER)
+        session = make_class(trainer=self.trainer)
+        self.client.force_authenticate(other)
+        self.assertEqual(self.client.get(f"/api/schedule/{session.pk}/roster/").status_code, 403)
+        self.client.force_authenticate(self.trainer)
+        self.assertEqual(self.client.get(f"/api/schedule/{session.pk}/roster/").status_code, 200)

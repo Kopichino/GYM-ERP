@@ -15,7 +15,7 @@ import {
   type EnquirySource,
   type EnquiryStatus,
 } from "../../api/crm";
-import { fetchPlans } from "../../api/billing";
+import { fetchSellablePlans } from "../../api/billing";
 import {
   Button,
   Card,
@@ -252,7 +252,8 @@ export default function AdminEnquiriesPage() {
     queryFn: () =>
       fetchEnquiries({ status: filter || undefined, source: sourceFilter || undefined }),
   });
-  const { data: plans } = useQuery({ queryKey: ["plans"], queryFn: fetchPlans });
+  // Only plans on sale: a new lead is not recorded against a retired plan.
+  const { data: plans } = useQuery({ queryKey: ["plans", "sellable"], queryFn: fetchSellablePlans });
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ["enquiries"] });
 

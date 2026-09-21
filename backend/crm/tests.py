@@ -5,7 +5,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from core.testing import TenantAPIMixin
+from core.testing import TenantAPIMixin, enrol
 
 from accounts.models import MemberProfile, MembershipStatus, Role
 from attendance.models import CheckInOut
@@ -17,7 +17,6 @@ from . import retention
 from .models import Enquiry, EnquirySource, EnquiryStatus, RetentionPolicy
 
 User = get_user_model()
-TODAY = timezone.localdate()
 
 
 def make_user(username, role):
@@ -25,11 +24,16 @@ def make_user(username, role):
         username=username, email=f"{username}@example.com", password="pass12345", role=role
     )
     MemberProfile.objects.get_or_create(user=user)
+    enrol(user)
     return user
 
 
 class EnquiryAccessTests(TenantAPIMixin, APITestCase):
     def setUp(self):
+        # Taken per test, not once at import. The runner imports every module
+        # at the start of a long run, so a run that crossed midnight handed these
+        # tests yesterday while the views worked from the real today.
+        self.today = timezone.localdate()
         self.admin = make_user("admin", Role.ADMIN)
         self.trainer = make_user("trainer", Role.TRAINER)
         self.member = make_user("member", Role.MEMBER)
@@ -48,7 +52,7 @@ class EnquiryAccessTests(TenantAPIMixin, APITestCase):
         self.client.force_authenticate(self.admin)
         resp = self.client.post(
             "/api/crm/enquiries/",
-            {"name": "Rohit Shetty", "phone": "+91 98200 12345", "follow_up_on": str(TODAY)},
+            {"name": "Rohit Shetty", "phone": "+91 98200 12345", "follow_up_on": str(self.today)},
         )
         self.assertEqual(resp.status_code, 201)
         self.assertEqual(resp.data["status"], EnquiryStatus.OPEN)
@@ -58,7 +62,7 @@ class EnquiryAccessTests(TenantAPIMixin, APITestCase):
         self.client.force_authenticate(self.admin)
         resp = self.client.post(
             "/api/crm/enquiries/",
-            {"name": "Rohit", "phone": "call me", "follow_up_on": str(TODAY)},
+            {"name": "Rohit", "phone": "call me", "follow_up_on": str(self.today)},
         )
         self.assertEqual(resp.status_code, 400)
         self.assertIn("phone", resp.data)
@@ -69,10 +73,12 @@ class EnquiryReminderTests(TenantAPIMixin, APITestCase):
         self.admin = make_user("admin", Role.ADMIN)
         self.client.force_authenticate(self.admin)
 
-        self.today = self._enquiry("Due today", TODAY)
-        self.overdue = self._enquiry("Missed", TODAY - timedelta(days=3))
-        self.future = self._enquiry("Next week", TODAY + timedelta(days=7))
-        self.done = self._enquiry("Already called", TODAY, EnquiryStatus.CONTACTED)
+        # Per test, for the reason given in EnquiryAccessTests.setUp.
+        self.today = timezone.localdate()
+        self.due_today = self._enquiry("Due today", self.today)
+        self.overdue = self._enquiry("Missed", self.today - timedelta(days=3))
+        self.future = self._enquiry("Next week", self.today + timedelta(days=7))
+        self.done = self._enquiry("Already called", self.today, EnquiryStatus.CONTACTED)
 
     def _enquiry(self, name, follow_up_on, status=EnquiryStatus.OPEN):
         return Enquiry.objects.create(
@@ -96,26 +102,26 @@ class EnquiryReminderTests(TenantAPIMixin, APITestCase):
 
     def test_days_overdue_counts_from_the_callback_date(self):
         self.assertEqual(self.overdue.days_overdue, 3)
-        self.assertEqual(self.today.days_overdue, 0)
+        self.assertEqual(self.due_today.days_overdue, 0)
 
     def test_marking_called_closes_it_off_the_due_list(self):
-        resp = self.client.post(f"/api/crm/enquiries/{self.today.pk}/mark_called/")
+        resp = self.client.post(f"/api/crm/enquiries/{self.due_today.pk}/mark_called/")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["status"], EnquiryStatus.CONTACTED)
-        self.assertEqual(resp.data["last_contacted_on"], str(TODAY))
+        self.assertEqual(resp.data["last_contacted_on"], str(self.today))
 
         self.assertEqual(self.client.get("/api/crm/enquiries/due/").data["count"], 1)
 
     def test_marking_called_with_a_new_date_reschedules_and_stays_open(self):
-        next_week = TODAY + timedelta(days=7)
+        next_week = self.today + timedelta(days=7)
         resp = self.client.post(
-            f"/api/crm/enquiries/{self.today.pk}/mark_called/",
+            f"/api/crm/enquiries/{self.due_today.pk}/mark_called/",
             {"follow_up_on": str(next_week)},
         )
         self.assertEqual(resp.data["status"], EnquiryStatus.OPEN)
         self.assertEqual(resp.data["follow_up_on"], str(next_week))
         # Logged as called today even though it stays open for later.
-        self.assertEqual(resp.data["last_contacted_on"], str(TODAY))
+        self.assertEqual(resp.data["last_contacted_on"], str(self.today))
         self.assertFalse(resp.data["is_due"])
 
     def test_follow_up_is_a_date_with_no_time_component(self):
@@ -291,6 +297,8 @@ class AtRiskTests(TenantAPIMixin, APITestCase):
     """Who is at risk is derived on every read -- there is no flag to clear."""
 
     def setUp(self):
+        # Per test, for the reason given in EnquiryAccessTests.setUp.
+        self.today = timezone.localdate()
         self.admin = make_user("riskadmin", Role.ADMIN)
         self.trainer = make_user("riskcoach", Role.TRAINER)
         self.other_trainer = make_user("othercoach", Role.TRAINER)
@@ -308,7 +316,7 @@ class AtRiskTests(TenantAPIMixin, APITestCase):
         profile.save()
         # `join_date` is auto_now_add, so it has to be forced past the default.
         MemberProfile.objects.filter(pk=profile.pk).update(
-            join_date=TODAY - timedelta(days=joined_days_ago)
+            join_date=self.today - timedelta(days=joined_days_ago)
         )
         return user
 
@@ -389,10 +397,10 @@ class AtRiskTests(TenantAPIMixin, APITestCase):
             plan=self.plan,
             amount=self.plan.price,
             method=PaymentMethod.CASH,
-            paid_date=TODAY - timedelta(days=28),
+            paid_date=self.today - timedelta(days=28),
         )
         row = self.rows_for()["lapsing"]
-        self.assertEqual(row["expires_on"], TODAY + timedelta(days=2))
+        self.assertEqual(row["expires_on"], self.today + timedelta(days=2))
         self.assertEqual(row["days_left"], 2)
 
     def test_a_trainer_sees_only_their_own_roster(self):
@@ -423,7 +431,7 @@ class AtRiskApiTests(TenantAPIMixin, APITestCase):
         self.trainer = make_user("arapicoach", Role.TRAINER)
         self.member = make_user("arapimember", Role.MEMBER)
         MemberProfile.objects.filter(user=self.member).update(
-            join_date=TODAY - timedelta(days=60)
+            join_date=timezone.localdate() - timedelta(days=60)
         )
 
     def test_members_cannot_read_the_at_risk_list(self):

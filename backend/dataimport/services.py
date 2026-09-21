@@ -15,9 +15,9 @@ from django.db import transaction
 from accounts.models import MembershipStatus, MemberProfile, Role, User
 from billing.models import PaymentMethod, PaymentStatus, Plan
 from billing.services import record_payment
-from instructors.models import Instructor
 
 from .mapping import BILLING, MEMBER, REQUIRED, TRAINER, detect_columns
+from tenancy.people import members_here, people_here
 
 MAX_ROWS = 5000
 
@@ -67,6 +67,13 @@ PAYMENT_STATUS_ALIASES = {
 
 class ImportError_(Exception):
     """Raised for problems with the file as a whole (not a single row)."""
+
+
+#: An import names people by email, and `User` spans every gym on the
+#: platform. Matching across that boundary let a gym adopt somebody else's
+#: account -- renaming it, enrolling it here, and handing this gym's admin
+#: its set-password and reset-MFA buttons. A row like that is refused.
+FOREIGN_EMAIL = "That email belongs to an account at another gym."
 
 
 def _key(value):
@@ -175,6 +182,18 @@ def to_decimal(value):
         return None
 
 
+def _enrol(user, role):
+    """Give an imported account standing at the gym doing the import.
+
+    Access is read off Membership. Without this, an imported member who later
+    sets a password would log in to find nothing there at all.
+    """
+    from tenancy import context
+    from tenancy.models import Membership
+
+    Membership.objects.get_or_create(user=user, tenant=context.require(), role=role)
+
+
 def _unique_username(base):
     base = re.sub(r"[^a-zA-Z0-9._-]", "", base) or "member"
     base = base[:140]
@@ -238,7 +257,9 @@ def _build_member(row, mapping, seen_emails):
     if email:
         seen_emails.add(email)
 
-    existing = User.objects.filter(email__iexact=email).first() if email else None
+    existing = members_here().filter(email__iexact=email).first() if email else None
+    if email and existing is None and User.objects.filter(email__iexact=email).exists():
+        errors.append(FOREIGN_EMAIL)
     status_raw = _key(values.get("membership_status"))
 
     return {
@@ -270,12 +291,12 @@ def _build_billing(row, mapping, _seen):
 
     member = None
     if email:
-        member = User.objects.filter(email__iexact=email).first()
+        member = members_here().filter(email__iexact=email).first()
     if not member and username:
-        member = User.objects.filter(username__iexact=username).first()
+        member = members_here().filter(username__iexact=username).first()
     if not member and member_name:
         parts = member_name.split()
-        qs = User.objects.filter(role=Role.MEMBER)
+        qs = members_here()
         if len(parts) >= 2:
             member = qs.filter(first_name__iexact=parts[0], last_name__iexact=parts[-1]).first()
         else:
@@ -336,7 +357,15 @@ def _build_trainer(row, mapping, seen_emails):
     if email:
         seen_emails.add(email)
 
-    existing = Instructor.objects.filter(name__iexact=name).first() if name else None
+    if not to_text(values.get("email")):
+        # A trainer only exists as an account now, and an account needs an
+        # email -- so this row is refused and reported rather than committed to
+        # nothing.
+        errors.append("A trainer needs an email address to get an account.")
+
+    existing = people_here().filter(email__iexact=email).first() if email else None
+    if email and existing is None and User.objects.filter(email__iexact=email).exists():
+        errors.append(FOREIGN_EMAIL)
 
     return {
         "action": "update" if existing else "create",
@@ -379,8 +408,10 @@ def commit_rows(built_rows, kind, *, actor):
 
 
 def _commit_member(data, _actor):
-    user = User.objects.filter(email__iexact=data["email"]).first() if data["email"] else None
+    user = members_here().filter(email__iexact=data["email"]).first() if data["email"] else None
     is_new = user is None
+    if is_new and data["email"] and User.objects.filter(email__iexact=data["email"]).exists():
+        raise ImportError_(FOREIGN_EMAIL)
 
     if is_new:
         username = data["username"] or data["email"].split("@")[0] or f"{data['first_name']}{data['last_name']}"
@@ -398,6 +429,7 @@ def _commit_member(data, _actor):
         # phone-only export still imports.
         user.email = f"{user.username}@imported.local"
     user.save()
+    _enrol(user, Role.MEMBER)
 
     profile, _ = MemberProfile.objects.get_or_create(user=user)
     for field in ("phone", "emergency_contact_name", "emergency_contact_phone"):
@@ -456,35 +488,29 @@ def _commit_billing(data, actor):
 
 
 def _commit_trainer(data, _actor):
-    instructor = Instructor.objects.filter(name__iexact=data["name"]).first()
-    is_new = instructor is None
+    # A trainer is an account at this gym. There is no separate profile to fall
+    # back on any more, so `_build_trainer` refuses rows without an email rather
+    # than letting them reach here and become nothing.
+    user = people_here().filter(email__iexact=data["email"]).first()
+    is_new = user is None
+    if is_new and User.objects.filter(email__iexact=data["email"]).exists():
+        raise ImportError_(FOREIGN_EMAIL)
     if is_new:
-        instructor = Instructor(name=data["name"])
+        username = data["username"] or data["email"].split("@")[0] or data["name"]
+        user = User(
+            username=_unique_username(username),
+            email=data["email"],
+            role=Role.TRAINER,
+        )
+        parts = data["name"].split()
+        user.first_name = parts[0] if parts else ""
+        user.last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
+        user.set_unusable_password()
+        user.save()
+    elif user.role == Role.MEMBER:
+        user.role = Role.TRAINER
+        user.save(update_fields=["role", "is_staff"])
 
-    instructor.specialty = data["specialty"] or instructor.specialty
-    instructor.bio = data["bio"] or instructor.bio
-
-    # A trainer with an email gets a login account so they can reach the
-    # trainer portal; without one they stay a content-only profile.
-    if data["email"]:
-        user = User.objects.filter(email__iexact=data["email"]).first()
-        if user is None:
-            username = data["username"] or data["email"].split("@")[0] or data["name"]
-            user = User(
-                username=_unique_username(username),
-                email=data["email"],
-                role=Role.TRAINER,
-            )
-            parts = data["name"].split()
-            user.first_name = parts[0] if parts else ""
-            user.last_name = " ".join(parts[1:]) if len(parts) > 1 else ""
-            user.set_unusable_password()
-            user.save()
-            MemberProfile.objects.get_or_create(user=user)
-        elif user.role == Role.MEMBER:
-            user.role = Role.TRAINER
-            user.save(update_fields=["role", "is_staff"])
-        instructor.user = user
-
-    instructor.save()
+    MemberProfile.objects.get_or_create(user=user)
+    _enrol(user, Role.TRAINER)
     return is_new

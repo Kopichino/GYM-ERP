@@ -5,9 +5,9 @@ import {
   cancelPTSession,
   fetchPTSessions,
   fetchSlots,
+  fetchBookableTrainers,
   type PTSession,
 } from "../api/pt";
-import { fetchInstructors } from "../api/instructors";
 import {
   Button,
   Card,
@@ -72,13 +72,12 @@ export default function BookTrainerPage() {
   const [date, setDate] = useState(isoDaysFromNow(1));
   const [error, setError] = useState("");
 
-  // Instructors carry the public-facing trainer profile, and each is linked to
-  // the account that actually takes the session.
-  const { data: instructors } = useQuery({
-    queryKey: ["instructors"],
-    queryFn: fetchInstructors,
+  // The trainers at this gym. Each is the account that actually takes the
+  // session, so its id is what a booking is made against.
+  const { data: bookable = [] } = useQuery({
+    queryKey: ["pt", "trainers"],
+    queryFn: fetchBookableTrainers,
   });
-  const bookable = (instructors ?? []).filter((i) => i.user);
 
   const { data: slots, isLoading: slotsLoading } = useQuery({
     queryKey: ["pt", "slots", trainerId, date],
@@ -144,9 +143,9 @@ export default function BookTrainerPage() {
             className="max-w-[260px]"
           >
             <option value="">Choose a trainer</option>
-            {bookable.map((instructor) => (
-              <option key={instructor.id} value={instructor.user!}>
-                {instructor.name} — {instructor.specialty}
+            {bookable.map((trainer) => (
+              <option key={trainer.id} value={trainer.id}>
+                {trainer.name}
               </option>
             ))}
           </Select>

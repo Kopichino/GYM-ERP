@@ -118,3 +118,19 @@ export async function completePTSession(
   const res = await api.post<PTSession>(`/pt/sessions/${id}/complete/`, payload ?? {});
   return res.data;
 }
+
+/** A trainer a member can book, as the booking form lists them. */
+export interface BookableTrainer {
+  id: number;
+  name: string;
+}
+
+/**
+ * The trainers at this gym. Replaces reading instructor profiles, which were
+ * removed: a session is booked against the trainer's own account, so the list
+ * comes straight from who holds a trainer role here.
+ */
+export async function fetchBookableTrainers() {
+  const res = await api.get<{ results: BookableTrainer[] }>("/pt/trainers/");
+  return res.data.results;
+}

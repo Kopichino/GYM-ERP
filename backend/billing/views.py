@@ -1,17 +1,23 @@
 from decimal import Decimal
 
 import openpyxl
+from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import ValidationError
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 from rest_framework.viewsets import ModelViewSet
 
 from accounts.models import Role, User
 from core.permissions import access, IsAdmin, IsAdminOrReadOnly
+from core.views import RefuseProtectedDeleteMixin
+from core.spreadsheets import neutralise_formulas
+from tenancy.people import people_here_or_404
 
 from .models import Discount, PaymentMethod, Payment, PaymentStatus, Plan
 from .serializers import (
@@ -21,25 +27,64 @@ from .serializers import (
     DiscountSerializer,
     MyPaymentSerializer,
     PlanSerializer,
+    PublicPlanSerializer,
 )
 from .services import (
+    NOT_ON_SALE,
     DiscountError,
     compute_period,
     get_latest_completed_payment,
+    lock_sellable_plan,
     price_with_discount,
     record_payment,
+    sellable_plans,
     sync_membership_status,
 )
 
 
-class PlanViewSet(ModelViewSet):
+class PlanViewSet(RefuseProtectedDeleteMixin, ModelViewSet):
     serializer_class = PlanSerializer
     permission_classes = [IsAdminOrReadOnly]
+    # Payments and online orders PROTECT their plan: the ledger and its
+    # invoices are history, so a sold plan is retired rather than removed.
+    protected_delete_message = (
+        "This plan has payment history, so it can't be deleted. Deactivate it instead."
+    )
 
     def get_queryset(self):
-        if access(self.request).is_admin:
+        # An admin manages every plan, retired ones included, so the Plans page
+        # can switch them back on. A picker that starts a sale asks for
+        # `?sellable=1`; everyone else only ever sees what is on sale.
+        wants_sellable = self.request.query_params.get("sellable") in ("1", "true")
+        if access(self.request).is_admin and not wants_sellable:
             return Plan.objects.all()
-        return Plan.objects.filter(is_active=True)
+        return sellable_plans()
+
+
+class PublicPlanListView(APIView):
+    """The price list for the gym's public website.
+
+    Unauthenticated on purpose: the website is read by people who are not
+    members yet. Deliberately narrow for the same reason -- active plans at this
+    gym only, and only what a price list shows. A retired plan stays private.
+
+    These are the same rows the Plans page edits and the front desk charges
+    against, so a price changed in the portal is the price on the website.
+
+    A plain list rather than a paginated one: a gym has a handful of plans, and a
+    website that showed only the first page of its prices would be quietly wrong.
+    """
+
+    permission_classes = [AllowAny]
+    # A stale bearer token in a visitor's browser must not turn this into a 401.
+    authentication_classes = []
+    # The public bucket, shared with the branding rather than with sign-in.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "public"
+
+    def get(self, request):
+        plans = sellable_plans().order_by("duration_days", "price")
+        return Response(PublicPlanSerializer(plans, many=True).data)
 
 
 class MySubscriptionView(APIView):
@@ -76,12 +121,26 @@ class MyPaymentListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return Payment.objects.filter(member=self.request.user).select_related("plan")
+        return Payment.objects.filter(member=self.request.user).select_related("plan", "invoice")
 
 
 def _member_billing_queryset():
+    """Members *of this gym*, for the billing list and its Excel export.
+
+    Tenant and role in one `filter()`, so both are matched on the same
+    membership -- the same shape as `accounts.views._member_queryset`. Filtering
+    on `User.role` alone listed every member on the platform, to every gym's
+    admin and in their download.
+    """
+    from tenancy import context
+
     return (
-        User.objects.filter(role=Role.MEMBER)
+        User.objects.filter(
+            memberships__tenant=context.require(),
+            memberships__role=Role.MEMBER,
+            memberships__is_active=True,
+        )
+        .distinct()
         .select_related("profile")
         .prefetch_related("payments__plan")
         .order_by("username")
@@ -137,6 +196,7 @@ class AdminMemberBillingExportView(APIView):
             content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
         response["Content-Disposition"] = "attachment; filename=gym_billing.xlsx"
+        neutralise_formulas(sheet)
         workbook.save(response)
         return response
 
@@ -151,25 +211,33 @@ class AdminPaymentViewSet(ModelViewSet):
     permission_classes = [IsAdmin]
 
     def get_queryset(self):
-        queryset = Payment.objects.select_related("plan", "member").order_by("-paid_date", "-id")
+        queryset = Payment.objects.select_related("plan", "member", "invoice").order_by(
+            "-paid_date", "-id"
+        )
         member_id = self.request.query_params.get("member")
         if member_id:
             queryset = queryset.filter(member_id=member_id)
         return queryset
 
     def perform_create(self, serializer):
-        payment = record_payment(
-            member=serializer.validated_data["member"],
-            plan=serializer.validated_data["plan"],
-            amount=serializer.validated_data["amount"],
-            method=serializer.validated_data["method"],
-            paid_date=serializer.validated_data.get("paid_date") or timezone.localdate(),
-            notes=serializer.validated_data.get("notes", ""),
-            recorded_by=self.request.user,
-            status=serializer.validated_data.get("status", PaymentStatus.COMPLETED),
-            external_reference=serializer.validated_data.get("external_reference", ""),
-            gateway=serializer.validated_data.get("gateway"),
-        )
+        with transaction.atomic():
+            # validate_plan checked the plan before this ran. Checked again under
+            # a lock, in the transaction that writes the payment, so a plan
+            # retired in between is refused rather than recorded.
+            if lock_sellable_plan(serializer.validated_data["plan"].pk) is None:
+                raise ValidationError({"plan": [NOT_ON_SALE]})
+            payment = record_payment(
+                member=serializer.validated_data["member"],
+                plan=serializer.validated_data["plan"],
+                amount=serializer.validated_data["amount"],
+                method=serializer.validated_data["method"],
+                paid_date=serializer.validated_data.get("paid_date") or timezone.localdate(),
+                notes=serializer.validated_data.get("notes", ""),
+                recorded_by=self.request.user,
+                status=serializer.validated_data.get("status", PaymentStatus.COMPLETED),
+                external_reference=serializer.validated_data.get("external_reference", ""),
+                gateway=serializer.validated_data.get("gateway"),
+            )
         serializer.instance = payment
 
     def perform_update(self, serializer):
@@ -205,6 +273,19 @@ class DiscountViewSet(ModelViewSet):
 class _CheckoutBase(APIView):
     permission_classes = [IsAdmin]
 
+    def _plan_on_sale(self, plan_id):
+        """The plan being sold, refused unless it is on sale here.
+
+        An unknown id -- or another gym's -- is a 404, as before. A retired plan
+        of this gym's is a 400 on the field instead: the till may still be
+        showing it, and the person at the desk needs to be told why it failed.
+        """
+        plan = sellable_plans().filter(pk=plan_id).first()
+        if plan is None:
+            get_object_or_404(Plan, pk=plan_id)
+            raise ValidationError({"plan": [NOT_ON_SALE]})
+        return plan
+
     def _resolve(self, request):
         """Validates the request and prices it. Returns everything both the
         quote and the sale need, so the two can't drift apart."""
@@ -212,8 +293,8 @@ class _CheckoutBase(APIView):
         form.is_valid(raise_exception=True)
         data = form.validated_data
 
-        member = get_object_or_404(User, pk=data["member"])
-        plan = get_object_or_404(Plan, pk=data["plan"])
+        member = people_here_or_404(data["member"], Role.MEMBER)
+        plan = self._plan_on_sale(data["plan"])
         paid_date = data.get("paid_date") or timezone.localdate()
 
         discount, amount_off, total = price_with_discount(
@@ -287,17 +368,24 @@ class CheckoutView(_CheckoutBase):
         except DiscountError as exc:
             return Response({"detail": str(exc), "code_rejected": True}, status=400)
 
-        payment = record_payment(
-            member=priced["member"],
-            plan=priced["plan"],
-            amount=priced["total"],
-            method=priced["form"].get("method") or PaymentMethod.CASH,
-            paid_date=priced["paid_date"],
-            notes=priced["form"].get("notes", ""),
-            recorded_by=request.user,
-            discount=priced["discount"],
-            discount_amount=priced["amount_off"],
-        )
+        with transaction.atomic():
+            # The plan was checked before the sale was priced. Checked again
+            # under a lock, in the transaction that writes the payment, so a
+            # plan retired in between is refused -- and retiring it now waits
+            # until this sale is written.
+            if lock_sellable_plan(priced["plan"].pk) is None:
+                raise ValidationError({"plan": [NOT_ON_SALE]})
+            payment = record_payment(
+                member=priced["member"],
+                plan=priced["plan"],
+                amount=priced["total"],
+                method=priced["form"].get("method") or PaymentMethod.CASH,
+                paid_date=priced["paid_date"],
+                notes=priced["form"].get("notes", ""),
+                recorded_by=request.user,
+                discount=priced["discount"],
+                discount_amount=priced["amount_off"],
+            )
 
         # Every completed sale gets its tax invoice straight away. Imported
         # locally so billing doesn't hard-depend on invoicing at module load.

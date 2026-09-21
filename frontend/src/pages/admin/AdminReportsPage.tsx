@@ -1,4 +1,4 @@
-import { isoDate } from "../../lib/dates";
+import { dateRangeProblem, isoDate } from "../../lib/dates";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -11,6 +11,7 @@ import {
   Card,
   EmptyState,
   ErrorState,
+  ErrorText,
   Input,
   LoadingState,
   tableCellClass,
@@ -18,11 +19,14 @@ import {
   tableHeadRowClass,
   tableRowClass,
 } from "../../components/ui";
+import { serverMessage } from "../../lib/apiError";
 import { railColor } from "../../lib/theme";
 import CustomReportBuilder from "../../components/CustomReportBuilder";
 
 const TABS = ["Revenue", "Attendance", "Churn", "PT performance", "Custom"] as const;
 type Tab = (typeof TABS)[number];
+
+const GENERIC_ERROR = "Something went wrong. Please try again.";
 
 const daysAgo = (n: number) => {
   const d = new Date();
@@ -68,26 +72,29 @@ export default function AdminReportsPage() {
   const [start, setStart] = useState(daysAgo(29));
   const [end, setEnd] = useState(isoDate(new Date()));
   const window_ = { start, end };
+  // Caught here and said next to the dates, rather than sent off to be refused
+  // and shown as "Something went wrong".
+  const rangeProblem = dateRangeProblem(start, end);
 
   const revenue = useQuery({
     queryKey: ["reports", "revenue", start, end],
     queryFn: () => fetchRevenue(window_),
-    enabled: tab === "Revenue",
+    enabled: tab === "Revenue" && !rangeProblem,
   });
   const attendance = useQuery({
     queryKey: ["reports", "attendance", start, end],
     queryFn: () => fetchAttendanceReport(window_),
-    enabled: tab === "Attendance",
+    enabled: tab === "Attendance" && !rangeProblem,
   });
   const churn = useQuery({
     queryKey: ["reports", "churn", start, end],
     queryFn: () => fetchChurn(window_),
-    enabled: tab === "Churn",
+    enabled: tab === "Churn" && !rangeProblem,
   });
   const pt = useQuery({
     queryKey: ["reports", "pt", start, end],
     queryFn: () => fetchPtPerformance(window_),
-    enabled: tab === "PT performance",
+    enabled: tab === "PT performance" && !rangeProblem,
   });
 
   return (
@@ -113,24 +120,42 @@ export default function AdminReportsPage() {
             <div className="flex gap-2">
               <label className="text-xs text-[var(--color-text-muted)]">
                 From
-                <Input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="mt-1" />
+                <Input
+                  type="date"
+                  value={start}
+                  max={end || undefined}
+                  onChange={(e) => setStart(e.target.value)}
+                  className="mt-1"
+                />
               </label>
               <label className="text-xs text-[var(--color-text-muted)]">
                 To
-                <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="mt-1" />
+                <Input
+                  type="date"
+                  value={end}
+                  min={start || undefined}
+                  aria-invalid={Boolean(rangeProblem)}
+                  onChange={(e) => setEnd(e.target.value)}
+                  className="mt-1"
+                />
               </label>
             </div>
           )}
         </div>
+        {tab !== "Custom" && rangeProblem && (
+          <div className="mt-2 flex justify-end">
+            <ErrorText>{rangeProblem}</ErrorText>
+          </div>
+        )}
       </Card>
 
-      {tab === "Revenue" && (
+      {tab === "Revenue" && !rangeProblem && (
         <>
           <Card accent={railColor(1)}>
             {revenue.isLoading ? (
               <LoadingState />
             ) : revenue.isError ? (
-              <ErrorState />
+              <ErrorState>{serverMessage(revenue.error, GENERIC_ERROR)}</ErrorState>
             ) : revenue.data ? (
               <div className="grid grid-cols-2 gap-5 sm:grid-cols-5">
                 <Stat label="Collected" value={revenue.data.collected} colour="#22c55e" />
@@ -187,12 +212,12 @@ export default function AdminReportsPage() {
         </>
       )}
 
-      {tab === "Attendance" && (
+      {tab === "Attendance" && !rangeProblem && (
         <Card accent={railColor(1)}>
           {attendance.isLoading ? (
             <LoadingState />
           ) : attendance.isError ? (
-            <ErrorState />
+            <ErrorState>{serverMessage(attendance.error, GENERIC_ERROR)}</ErrorState>
           ) : attendance.data ? (
             <>
               <div className="mb-6 grid grid-cols-2 gap-5 sm:grid-cols-4">
@@ -223,12 +248,12 @@ export default function AdminReportsPage() {
         </Card>
       )}
 
-      {tab === "Churn" && (
+      {tab === "Churn" && !rangeProblem && (
         <Card accent={railColor(1)}>
           {churn.isLoading ? (
             <LoadingState />
           ) : churn.isError ? (
-            <ErrorState />
+            <ErrorState>{serverMessage(churn.error, GENERIC_ERROR)}</ErrorState>
           ) : churn.data ? (
             <>
               <div className="mb-4 grid grid-cols-3 gap-5">
@@ -274,12 +299,12 @@ export default function AdminReportsPage() {
         </Card>
       )}
 
-      {tab === "PT performance" && (
+      {tab === "PT performance" && !rangeProblem && (
         <Card accent={railColor(1)}>
           {pt.isLoading ? (
             <LoadingState />
           ) : pt.isError ? (
-            <ErrorState />
+            <ErrorState>{serverMessage(pt.error, GENERIC_ERROR)}</ErrorState>
           ) : !pt.data?.trainers.length ? (
             <EmptyState>No trainers yet.</EmptyState>
           ) : (
@@ -291,7 +316,6 @@ export default function AdminReportsPage() {
                     <th className={tableHeadCellClass}>Members</th>
                     <th className={tableHeadCellClass}>Revenue</th>
                     <th className={tableHeadCellClass}>Payments</th>
-                    <th className={tableHeadCellClass}>Commission</th>
                     <th className={tableHeadCellClass}>Member visits</th>
                   </tr>
                 </thead>
@@ -302,9 +326,6 @@ export default function AdminReportsPage() {
                       <td className={tableCellClass}>{t.member_count}</td>
                       <td className={tableCellClass}>{t.revenue}</td>
                       <td className={tableCellClass}>{t.payment_count}</td>
-                      <td className={tableCellClass} style={{ color: "var(--color-accent-2)" }}>
-                        {t.commission}
-                      </td>
                       <td className={tableCellClass}>{t.member_visits}</td>
                     </tr>
                   ))}

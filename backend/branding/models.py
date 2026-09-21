@@ -63,9 +63,16 @@ class Branding(models.Model):
     )
     phone = models.CharField(max_length=20, blank=True)
     email = models.EmailField(blank=True)
-    address = models.TextField(blank=True, help_text="Printed on invoices.")
+    address = models.TextField(blank=True, help_text="Printed on invoices and shown on the website.")
     website = models.URLField(blank=True)
     instagram = models.CharField(max_length=100, blank=True)
+    #: The public website's footer, one row per line: "Monday to Friday: 5:30 - 23:00".
+    #: Free text rather than a timetable, because gyms describe their hours in
+    #: every shape -- split shifts, "open 24 hours", holiday notes -- and the
+    #: website only ever displays them.
+    opening_hours = models.TextField(
+        blank=True, help_text="One line per row, e.g. 'Monday to Friday: 5:30 - 23:00'."
+    )
     # Invoicing reads these when set, falling back to settings otherwise, so a
     # gym can be fully configured without touching environment variables.
     gstin = models.CharField(max_length=20, blank=True)

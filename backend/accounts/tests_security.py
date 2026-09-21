@@ -90,6 +90,10 @@ class AdminPasswordResetRevokesSessionsTests(TenantAPIMixin, APITestCase):
     def setUp(self):
         self.admin = make_user("sec_admin", role=Role.ADMIN)
         self.member = make_user("sec_member")
+        # A member of this gym. Account admin is scoped to the gym, so without
+        # this the member is out of reach -- and these tests would pass for the
+        # wrong reason, on a 404 that never touched a password.
+        self.member_for(self.member, Role.MEMBER)
         self.client.force_authenticate(self.admin)
 
     def _member_url(self):

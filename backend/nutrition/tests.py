@@ -5,7 +5,7 @@ from django.db.utils import IntegrityError
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from core.testing import TenantAPIMixin
+from core.testing import TenantAPIMixin, enrol
 
 from accounts.models import MemberProfile, Role
 
@@ -93,6 +93,8 @@ class DietPlanApiTests(TenantAPIMixin, APITestCase):
             user=self.member, defaults={"trainer": self.trainer}
         )
         MemberProfile.objects.get_or_create(user=self.other)
+        for person in (self.member, self.other, self.trainer):
+            enrol(person)
         self.food = make_food("Oats", 389, protein=16.9, carbs=66)
         self.client.force_authenticate(self.member)
 
@@ -224,13 +226,37 @@ class FoodCatalogueTests(TenantAPIMixin, APITestCase):
         )
         self.assertEqual(resp.status_code, 403)
 
-    def test_admin_can_add_a_food(self):
-        self.client.force_authenticate(self.admin)
+    def _staff(self):
+        # The catalogue is shared by every gym on the platform, so maintaining
+        # it is platform staff's job rather than any one gym's admin.
+        return User.objects.get_or_create(
+            username="catalogue_staff", defaults={"email": "cs@example.com", "is_staff": True}
+        )[0]
+
+    def test_platform_staff_can_add_a_food(self):
+        self.client.force_authenticate(self._staff())
         resp = self.client.post(
             "/api/nutrition/foods/",
             {"name": "Idli", "calories": "132", "protein_g": "3", "carbs_g": "28", "fat_g": "0.5"},
         )
         self.assertEqual(resp.status_code, 201)
+
+    def test_a_gym_admin_cannot_edit_the_shared_catalogue(self):
+        """Every gym reads these rows, so one gym's admin changing a food's
+        macros would change every other gym's diet plan totals."""
+        banana = FoodItem.objects.get(name="Banana")
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(
+            self.client.post("/api/nutrition/foods/", {"name": "Idli", "calories": "132"}).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.patch(f"/api/nutrition/foods/{banana.id}/", {"calories": "1"}).status_code,
+            403,
+        )
+        self.assertEqual(self.client.delete(f"/api/nutrition/foods/{banana.id}/").status_code, 403)
+        banana.refresh_from_db()
+        self.assertEqual(banana.calories, Decimal("89"))
 
     def test_search_narrows_the_list(self):
         make_food("Brown rice", 123)
@@ -244,3 +270,26 @@ class FoodCatalogueTests(TenantAPIMixin, APITestCase):
         self.assertEqual(len(self.client.get("/api/nutrition/foods/").data), 0)
         self.client.force_authenticate(self.admin)
         self.assertEqual(len(self.client.get("/api/nutrition/foods/").data), 1)
+
+    def test_a_food_in_a_diet_plan_cannot_be_deleted(self):
+        """PROTECT on the meal item: pulling a food would silently change the
+        macros of every plan that uses it. The refusal is a 400, not a 500."""
+        food = FoodItem.objects.get(name="Banana")
+        plan = DietPlan.objects.create(user=self.member, name="Bulk")
+        day = DietDay.objects.create(plan=plan, weekday=0)
+        meal = DietMeal.objects.create(day=day, meal_type="breakfast")
+        item = DietMealItem.objects.create(meal=meal, food=food, quantity_g=Decimal("120"))
+
+        self.client.force_authenticate(self._staff())
+        resp = self.client.delete(f"/api/nutrition/foods/{food.id}/")
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertTrue(FoodItem.objects.filter(pk=food.pk).exists())
+        self.assertTrue(DietMealItem.objects.filter(pk=item.pk, food=food).exists())
+
+    def test_an_unused_food_can_be_deleted(self):
+        food = make_food("Retired snack", 100)
+        self.client.force_authenticate(self._staff())
+        resp = self.client.delete(f"/api/nutrition/foods/{food.id}/")
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(FoodItem.objects.filter(pk=food.pk).exists())

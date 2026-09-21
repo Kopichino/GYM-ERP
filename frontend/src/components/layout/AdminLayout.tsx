@@ -7,8 +7,8 @@ import { useEnquiryReminder } from "../../hooks/useEnquiryReminder";
 import { pageTransition } from "../../lib/motion";
 import { statusColor } from "../../lib/theme";
 import { PageHeader } from "../ui";
-import { AdminSidebarDesktop, AdminSidebarDrawer } from "./AdminSidebar";
-import { adminLabelFor } from "./adminNav";
+import { ADMIN_GROUPS, adminLabelFor } from "./adminNav";
+import { SidebarDesktop, SidebarDrawer } from "./Sidebar";
 import { readCollapsed, writeCollapsed } from "./sidebarPref";
 
 export default function AdminLayout() {
@@ -93,7 +93,8 @@ export default function AdminLayout() {
 
   return (
     <>
-      <AdminSidebarDrawer
+      <SidebarDrawer
+        groups={ADMIN_GROUPS}
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         badges={badges}
@@ -102,7 +103,12 @@ export default function AdminLayout() {
       {/* `items-start` so the rail's `sticky` has room to work -- a stretched
           flex child is already full height and never sticks. */}
       <div className="flex items-start">
-        <AdminSidebarDesktop collapsed={collapsed} onToggle={toggle} badges={badges} />
+        <SidebarDesktop
+          groups={ADMIN_GROUPS}
+          collapsed={collapsed}
+          onToggle={toggle}
+          badges={badges}
+        />
 
         {/* The shell no longer pads admin routes, so the content column owns
             its own padding. min-w-0 keeps a wide table scrolling inside the
