@@ -19,12 +19,35 @@ services:
         sync: false
       - key: CSRF_TRUSTED_ORIGINS
         sync: false
+      # Render prompts for `sync: false` values only when a Blueprint is first
+      # created; on an existing service, add the four below in the dashboard.
+      #
+      # Where password-reset emails link to: the deployed frontend's origin.
+      # Unset, members are emailed a link to localhost.
+      - key: FRONTEND_URL
+        sync: false
+      # One zone for the whole deployment: every gym on it reads "today",
+      # check-in dates, reminder windows and report ranges in this zone.
+      - key: TIME_ZONE
+        sync: false
+      # Shared rate-limit state -- a Render Key Value instance's internal URL.
+      # Unset, limits live in per-process memory and reset on every restart.
+      - key: REDIS_URL
+        sync: false
+      # Reverse proxies that append to X-Forwarded-For in front of the app.
+      # Left at 0, every client shares the proxy's address and so one
+      # rate-limit bucket. Set it only after confirming the chain: see
+      # "Confirming NUM_PROXIES" in the README.
+      - key: NUM_PROXIES
+        sync: false
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY
         sync: false
       - key: CLOUDINARY_API_SECRET
         sync: false
+      # Set in production. Without it, unhandled errors only reach this
+      # service's log (as tracebacks) and nobody is alerted.
       - key: SENTRY_DSN
         sync: false
       # GST invoicing. Leave GYM_GSTIN blank and no tax is shown on invoices.
@@ -78,17 +101,25 @@ services:
   - type: cron
     name: gymerp-nightly
     runtime: python
+    # Render does not run cron jobs on the free plan (they carry a minimum
+    # monthly charge). Choose a paid plan before syncing this Blueprint --
+    # deliberately left unchanged here pending that decision.
     plan: free
     rootDir: backend
     buildCommand: bash build.sh
     schedule: "30 1 * * *"
     startCommand: python manage.py expire_subscriptions && python manage.py send_reminders
     envVars:
+      # Use the same value as the web service's generated SECRET_KEY.
       - key: SECRET_KEY
         sync: false
       - key: DEBUG
         value: "False"
       - key: DATABASE_URL
+        sync: false
+      # Must match the web service, or the sweep and the app disagree on
+      # which day it is.
+      - key: TIME_ZONE
         sync: false
       - key: EMAIL_HOST
         sync: false

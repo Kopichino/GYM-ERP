@@ -5,11 +5,14 @@ logger: that the event is there, named and attributed, and that the password,
 code, token or signature involved is not.
 """
 
+import io
 import json
+import logging
 from datetime import timedelta
 
 from django.core.cache import cache
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
+from django.urls import path
 from django.utils import timezone
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
@@ -131,3 +134,53 @@ class WebhookEventTests(APITestCase):
         self.assertIn("security_event=webhook_signature_invalid", joined)
         self.assertNotIn("forged-signature-abc123", joined)
         self.assertNotIn("hook_secret_value", joined)
+
+
+def _fails(request):
+    raise RuntimeError("request-error-probe")
+
+
+urlpatterns = [path("fails/", _fails)]
+
+
+@override_settings(ROOT_URLCONF=__name__)
+class RequestErrorVisibilityTests(TestCase):
+    """An unhandled 500 in production reaches the log stream.
+
+    Django prints request errors only with DEBUG on and otherwise mails ADMINS,
+    which is empty -- so without Sentry a production 500 left no trace at all.
+    """
+
+    def setUp(self):
+        self.handler = next(
+            h for h in logging.getLogger("django.request").handlers if h.name == "request_errors"
+        )
+        self.stream = io.StringIO()
+        previous = self.handler.setStream(self.stream)
+        self.addCleanup(self.handler.setStream, previous)
+        self.client.raise_request_exception = False
+
+    @override_settings(DEBUG=False)
+    def test_an_unhandled_error_is_written_with_its_traceback(self):
+        resp = self.client.get("/fails/?token=query-string-secret")
+        self.assertEqual(resp.status_code, 500)
+        written = self.stream.getvalue()
+        self.assertIn("Internal Server Error: /fails/", written)
+        self.assertIn("RuntimeError: request-error-probe", written)
+        # The path is logged, never the query string.
+        self.assertNotIn("query-string-secret", written)
+
+    def test_nothing_is_added_while_debug_prints_it_already(self):
+        record = logging.LogRecord(
+            "django.request", logging.ERROR, __file__, 0, "Internal Server Error: /x/", None, None
+        )
+        with override_settings(DEBUG=True):
+            self.assertFalse(self.handler.filter(record))
+        with override_settings(DEBUG=False):
+            self.assertTrue(self.handler.filter(record))
+
+    @override_settings(DEBUG=False)
+    def test_a_client_error_is_not_written(self):
+        resp = self.client.get("/no-such-page/")
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(self.stream.getvalue(), "")

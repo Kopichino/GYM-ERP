@@ -109,17 +109,21 @@ Key ones:
 | `SECRET_KEY` | backend | Django secret key -- must be a long random value in production |
 | `DEBUG` | backend | `False` in production |
 | `DATABASE_URL` | backend | Postgres connection string in production; unset = SQLite locally |
-| `REDIS_URL` | backend | Shared cache. **Unset = rate limiting is per-process and is wiped on every restart**, so the login and per-username throttles stop holding. `manage.py check --deploy` warns when it is missing in production |
+| `REDIS_URL` | backend | Shared cache. **Unset = rate limiting is per-process and is wiped on every restart**, so the login and per-username throttles stop holding. `manage.py check --deploy` warns when it is missing in production. On Render: a Key Value instance in the same region, using its internal URL |
+| `NUM_PROXIES` | backend | How many reverse proxies append to `X-Forwarded-For` in front of the app. Default `0` trusts only the socket address -- right locally, wrong behind Render, where every client would then share the proxy's address and one rate-limit bucket. **Set in production only after confirming the chain** (see "Confirming NUM_PROXIES" below): too high lets a client pick its own address |
+| `TIME_ZONE` | backend | **Required in production.** The zone "today" is read in -- check-in dates, day passes, reminder windows, report ranges. One setting for the whole deployment: every gym it serves shares it. Set the same value on the nightly cron |
 | `CORS_ALLOWED_ORIGINS` / `CSRF_TRUSTED_ORIGINS` | backend | Must list the deployed frontend's exact origin |
 | `CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET` | backend | Required in production for media uploads |
+| `SENTRY_DSN` | backend | **Set in production.** Error reporting and alerting. Unset, unhandled errors reach only the host's log (as tracebacks, when `DEBUG` is off) |
 | `CLOUDINARY_AUTH_TOKEN_KEY` | backend | Optional. Makes signed receipt URLs time-limited. Without it they are signed but do not expire -- still private, but a leaked URL keeps working |
 | `DJANGO_ADMIN_ENABLED` | backend | `False` removes the Django admin route entirely. It is a full read/write console over every gym, behind a password alone |
 | `DJANGO_ADMIN_URL` | backend | Moves the admin off `/admin/`, which is the path undirected scanning looks for. Default `admin/` |
 | `SECURE_HSTS_SECONDS` | backend | HSTS max-age, default one week. Preload is claimed automatically only at a year or more -- raise it once every subdomain is HTTPS-only, since browsers honour it for the full duration regardless of what the server later says |
 | `VITE_API_URL` | frontend | Backend API base URL |
+| `VITE_TENANT_SLUG` | frontend | **Required in production.** The gym this frontend serves, as it appears in `/api/t/<slug>/`. Read it from the database (`SELECT slug, name FROM tenancy_tenant ORDER BY id;`) -- a fresh database starts with `default-gym-main`. Unset, the frontend falls back to `ironcore-main`, and on any database without that gym every gym request 404s |
 | `GYM_NAME` / `GYM_GSTIN` / `GYM_STATE` / `GST_RATE` | backend | Printed on invoices. The branding page overrides these once filled in; `GYM_STATE` decides CGST+SGST vs IGST |
 | `EMAIL_HOST` / `EMAIL_PORT` / `EMAIL_HOST_USER` / `EMAIL_HOST_PASSWORD` / `DEFAULT_FROM_EMAIL` | backend | Outgoing member email. Unset = mail is printed to the console instead of sent |
-| `FRONTEND_URL` | backend | Where password-reset emails link to. Must be the deployed frontend's origin in production, or members get a link to localhost |
+| `FRONTEND_URL` | backend | **Required in production.** Where password-reset emails link to. Must be the deployed frontend's origin, or members get a link to localhost |
 | `MFA_REQUIRED` | backend | Default `True`: every account -- member, trainer, admin -- signs in with a code from an authenticator app, and sets one up the first time it signs in. `False` stops requiring it; accounts that already set it up keep using it |
 | `MFA_ISSUER` | backend | The name authenticator apps list these accounts under. Default `IRONCORE` |
 | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` / `RAZORPAY_WEBHOOK_SECRET` | backend | Online payment. Unset = the member portal doesn't offer it |
@@ -136,17 +140,45 @@ Key ones:
    directory `backend`, build command `bash build.sh`, start command
    `gunicorn gymerp.wsgi:application` (or use the included `render.yaml`
    blueprint). Set all the env vars above, plus `ALLOWED_HOSTS` to your Render
-   domain. Render's free web services sleep after 15 minutes idle; the
+   domain. Beyond the secrets, production needs `FRONTEND_URL`, `TIME_ZONE`
+   and `REDIS_URL`, and `NUM_PROXIES` once confirmed (see below) -- none has a
+   safe default. Render prompts for the blueprint's `sync: false` variables only
+   when the blueprint is first created; on an existing service add them in the
+   dashboard. Render's free web services sleep after 15 minutes idle; the
    frontend shows a "waking up the server..." message on cold start rather
-   than a bare spinner.
+   than a bare spinner. The blueprint's nightly cron service needs a paid
+   plan: Render does not run cron jobs on the free plan.
 4. **Frontend -- Vercel**: import this repo with root directory `frontend`,
    framework preset Vite. Set `VITE_API_URL` to your Render backend's
-   `/api` URL. The included `vercel.json` handles client-side routing
+   `/api` URL and `VITE_TENANT_SLUG` to the gym's slug from the database
+   (see the table above). The included `vercel.json` handles client-side routing
    (React Router) so deep links don't 404.
 5. Update the backend's `CORS_ALLOWED_ORIGINS`/`CSRF_TRUSTED_ORIGINS` to the
    real Vercel domain once you have it, and redeploy.
-6. (Optional) **Sentry**: free-tier project for both Django and React, set
-   `SENTRY_DSN` on the backend.
+6. **Sentry -- set it for production**: create a free-tier project and set
+   `SENTRY_DSN` on the backend (the frontend has no Sentry SDK). Without it an
+   unhandled error still reaches the Render log as a traceback, but nothing
+   alerts anyone and repeats are not grouped.
+
+### Confirming NUM_PROXIES
+
+The rate limits key on the client's address, and behind Render the socket
+address is Render's proxy, not the client. `NUM_PROXIES` tells the API how far
+from the right of `X-Forwarded-For` the client's address sits, so it has to match
+what actually arrives -- observe it rather than assume it:
+
+1. Temporarily change the web service's start command in the Render dashboard to
+   `gunicorn gymerp.wsgi:application --access-logfile - --access-logformat '%(h)s xff="%({x-forwarded-for}i)s" "%(r)s" %(s)s'`
+2. From a device whose public IP you know, open `https://<your backend>/api/health/`.
+3. Find that request in the service's logs. The first field is the socket address
+   (expect a private address: the proxy); `xff` is the forwarded chain.
+4. `NUM_PROXIES` is your IP's position counted from the right of `xff`: the last
+   entry is `1`, second from the right is `2`.
+5. Set `NUM_PROXIES`, restore the original start command -- that access log
+   records every visitor's address -- and redeploy.
+
+Check again whenever anything is added in front of the service (a CDN, a proxy,
+a Vercel rewrite): each hop that appends to the header shifts the count.
 
 ## What's in it
 
@@ -336,8 +368,11 @@ one-time device key when it finishes.
 
 ### Scheduled commands
 
-None of these are wired up automatically; run them from a scheduler (the
-included `render.yaml` has a nightly cron service). All are safe to re-run.
+`build.sh` runs the two catalogue imports on every deploy. The rest are not
+wired up automatically; run them from a scheduler (the included `render.yaml`
+has a nightly cron service, which needs a paid Render plan and the same
+`SECRET_KEY`, `DATABASE_URL` and `TIME_ZONE` as the web service). All are safe
+to re-run.
 
 | Command | What it does |
 |---|---|
@@ -345,7 +380,7 @@ included `render.yaml` has a nightly cron service). All are safe to re-run.
 | `send_reminders` | Emails members 7 / 3 / 1 days before expiry, and once the day after. `--dry-run` lists who would be written to |
 | `send_whatsapp_reminders` | The same nudge over WhatsApp. Shares the notification log with the email sweep, so a member is contacted on one channel, not both |
 | `import_exercises` | Loads the bundled exercise catalogue |
-| `import_foods` | Loads the starter food catalogue used by diet plans |
+| `import_foods` | Loads the starter food catalogue used by diet plans. Adds missing foods by name and never changes existing ones -- though a starter food that was deleted or renamed comes back on the next deploy; deactivate it instead |
 
 ## Roles and portals
 

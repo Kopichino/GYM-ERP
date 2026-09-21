@@ -500,14 +500,30 @@ if SENTRY_DSN:
 
 
 # --- Logging -----------------------------------------------------------------
-# Django's defaults stay as they are; this only gives security events a home.
-# They go to stdout like everything else on the host, and are written by
-# core.security_log, which never records a password, code, token or secret.
+# Django's defaults stay as they are; this gives security events a home and
+# makes production request errors visible. Both go to the host's log stream.
+# Security events are written by core.security_log, which never records a
+# password, code, token or secret.
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
-    "handlers": {"security_console": {"class": "logging.StreamHandler"}},
+    "filters": {"require_debug_false": {"()": "django.utils.log.RequireDebugFalse"}},
+    "handlers": {
+        "security_console": {"class": "logging.StreamHandler"},
+        # Django prints request errors only with DEBUG on, and otherwise mails
+        # ADMINS -- which is empty -- so without Sentry an unhandled 500 in
+        # production left no trace anywhere. Errors only (a 4xx is not news),
+        # and only with DEBUG off, because local runs already print them. The
+        # line is Django's own: the reason, the path without its query string,
+        # and the traceback -- never headers, cookies or the body.
+        "request_errors": {
+            "class": "logging.StreamHandler",
+            "level": "ERROR",
+            "filters": ["require_debug_false"],
+        },
+    },
     "loggers": {
+        "django.request": {"handlers": ["request_errors"]},
         "security": {
             "handlers": ["security_console"],
             "level": env("SECURITY_LOG_LEVEL", default="INFO"),
