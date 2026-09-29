@@ -162,12 +162,33 @@ AUTH_USER_MODEL = "accounts.User"
 # than assumed.
 REDIS_URL = env("REDIS_URL", default="")
 
+# Two aliases over the same Redis, because the two things stored in it fail
+# differently. `default` (throttles, the verified-hostname list) degrades when
+# Redis is unreachable so an outage does not answer every request -- public ones
+# included -- with a 500. `revocation` stays strict: see core.cache and
+# accounts.revocation for why an ended session must not come back to life
+# because a cache was down.
+#
+# Short socket timeouts so a dead Redis is noticed in a fraction of a second
+# rather than stalling each request on connect retries.
+REDIS_TIMEOUT_SECONDS = env.float("REDIS_TIMEOUT_SECONDS", default=0.25)
+_redis_options = {
+    "socket_connect_timeout": REDIS_TIMEOUT_SECONDS,
+    "socket_timeout": REDIS_TIMEOUT_SECONDS,
+}
+
 if REDIS_URL:
     CACHES = {
         "default": {
+            "BACKEND": "core.cache.ResilientRedisCache",
+            "LOCATION": REDIS_URL,
+            "OPTIONS": _redis_options,
+        },
+        "revocation": {
             "BACKEND": "django.core.cache.backends.redis.RedisCache",
             "LOCATION": REDIS_URL,
-        }
+            "OPTIONS": _redis_options,
+        },
     }
 else:
     CACHES = {
@@ -176,7 +197,15 @@ else:
             # Named, so separate processes are visibly separate rather than
             # appearing to share an anonymous default.
             "LOCATION": "ironcore-local",
-        }
+        },
+        # The *same* store, deliberately: LocMemCache shares one dict per
+        # LOCATION. With no Redis there is one process and nothing to lose, so
+        # keeping them together leaves local behaviour exactly as it was --
+        # including `cache.clear()` clearing revocation state between tests.
+        "revocation": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "ironcore-local",
+        },
     }
 
 
@@ -332,7 +361,34 @@ SIMPLE_JWT = {
 # views in accounts.views), not returned in the JSON body, to reduce XSS risk.
 JWT_REFRESH_COOKIE_NAME = "refresh_token"
 JWT_REFRESH_COOKIE_SECURE = not DEBUG
-JWT_REFRESH_COOKIE_SAMESITE = "None" if not DEBUG else "Lax"
+
+# `Lax` assumes the portal and the API are the same site -- app.example.com
+# talking to api.example.com, which is the topology the README describes. It is
+# the default because it is the only one that works everywhere: Safari and every
+# other browser that blocks third-party cookies drops a cross-site refresh
+# cookie, and the member is signed out on every reload.
+#
+# A deployment that genuinely is cross-site (a *.vercel.app front end against a
+# *.onrender.com API -- different sites, because both are public suffixes) has to
+# say so with JWT_REFRESH_COOKIE_SAMESITE=None, and should expect Safari and iOS
+# to sign members out regardless. Browsers refuse `None` without `Secure`, so
+# that combination is rejected here rather than shipped and puzzled over later.
+JWT_REFRESH_COOKIE_SAMESITE = env("JWT_REFRESH_COOKIE_SAMESITE", default="Lax")
+if JWT_REFRESH_COOKIE_SAMESITE not in ("Lax", "Strict", "None"):
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(
+        "JWT_REFRESH_COOKIE_SAMESITE must be one of Lax, Strict or None; got "
+        f"{JWT_REFRESH_COOKIE_SAMESITE!r}."
+    )
+if JWT_REFRESH_COOKIE_SAMESITE == "None" and not JWT_REFRESH_COOKIE_SECURE:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured(
+        "JWT_REFRESH_COOKIE_SAMESITE=None requires a secure cookie, and browsers "
+        "reject the combination. Serve the API over HTTPS with DEBUG off, or use "
+        "the same-site topology (app.<domain> + api.<domain>) with SameSite=Lax."
+    )
 
 # --- Two-step sign-in ----------------------------------------------------
 #

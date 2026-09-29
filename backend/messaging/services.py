@@ -112,8 +112,25 @@ def handle_incoming(phone, text, external_id=""):
         return send(digits, reply, user=member, automated=True)
 
 
+def sweep_all_tenants(on=None, template=None):
+    """The WhatsApp sweep, once per gym. Returns (sent, skipped, failures).
+
+    The counterpart to `notifications.services.sweep_all_tenants`, and for the
+    same reason: cron starts with no gym in scope, and `send_expiry_reminders`
+    below reads this gym's ledger through scoped managers.
+    """
+    from tenancy.sweeps import for_each_tenant
+
+    results, failures = for_each_tenant(
+        lambda tenant: send_expiry_reminders(on=on, template=template)
+    )
+    sent = sum(gym_sent for _, (gym_sent, _) in results)
+    skipped = sum(gym_skipped for _, (_, gym_skipped) in results)
+    return sent, skipped, failures
+
+
 def send_expiry_reminders(on=None, template=None):
-    """WhatsApp counterpart to the email sweep.
+    """WhatsApp counterpart to the email sweep, for the gym in scope.
 
     Deliberately reuses the email module's idea of who is due, so the two can't
     disagree about which members are being chased, and writes to the same

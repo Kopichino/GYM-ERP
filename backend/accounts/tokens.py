@@ -15,6 +15,8 @@ unchanged one.
 
 import logging
 
+from core.security_log import security_event
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,13 +36,16 @@ def revoke_refresh_tokens(user):
         logger.warning("token_blacklist is not installed; cannot revoke tokens")
         return 0
 
-    # Refresh tokens are the long-lived half; the access tokens already handed
-    # out would otherwise keep working for up to fifteen minutes after the
-    # reset that was meant to lock someone out. See accounts.revocation.
-    from .revocation import end_access_tokens
-
-    end_access_tokens(user)
-
+    # The database first, and this ordering is the point.
+    #
+    # Two things end a session, and they are not equally durable: blacklisting
+    # the refresh tokens is a row in a table that survives anything, while
+    # ending the access tokens is a note in a cache that may be unreachable.
+    # Ending the access tokens first meant that when the cache was down its
+    # exception left this function before a single refresh token had been
+    # blacklisted -- so a password reset meant to lock an intruder out changed
+    # the password and left them a refresh token good for another week. The
+    # durable half now happens first and cannot be skipped by a cache outage.
     revoked = 0
     for token in OutstandingToken.objects.filter(user=user):
         try:
@@ -49,4 +54,26 @@ def revoke_refresh_tokens(user):
             logger.exception("could not blacklist token %s for user %s", token.pk, user.pk)
             continue
         revoked += int(created)
+
+    # Then the short-lived half. Access tokens already handed out would
+    # otherwise keep working for up to fifteen minutes after the reset that was
+    # meant to lock someone out. See accounts.revocation.
+    #
+    # A failure here is reported rather than swallowed -- the caller is told
+    # that half the job is undone -- but it is recorded first, so the log says
+    # plainly that the refresh tokens did go and the access tokens did not.
+    from .revocation import RevocationUnavailable, end_access_tokens
+
+    try:
+        end_access_tokens(user)
+    except RevocationUnavailable:
+        security_event(
+            "access_tokens_not_ended",
+            warning=True,
+            user=user.pk,
+            count=revoked,
+            reason="revocation_store_unavailable",
+        )
+        raise
+
     return revoked

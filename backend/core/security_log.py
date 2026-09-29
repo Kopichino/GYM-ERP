@@ -30,7 +30,11 @@ def security_event(event, request=None, *, warning=False, **fields):
     """Record one security event. `warning` for things worth an alert."""
     data = {key: fields[key] for key in FIELDS if fields.get(key) not in (None, "")}
     if request is not None:
-        data.setdefault("ip", request.META.get("REMOTE_ADDR", ""))
+        # The same address the rate limiter counts against, so an audit line and
+        # a throttle refusal name the same caller. See core.client_ip.
+        from core.client_ip import client_ip
+
+        data.setdefault("ip", client_ip(request))
         from tenancy import context
 
         tenant = context.get()

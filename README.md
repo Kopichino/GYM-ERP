@@ -115,6 +115,7 @@ Key ones:
 | `CORS_ALLOWED_ORIGINS` / `CSRF_TRUSTED_ORIGINS` | backend | Must list the deployed frontend's exact origin |
 | `CLOUDINARY_CLOUD_NAME/API_KEY/API_SECRET` | backend | Required in production for media uploads |
 | `SENTRY_DSN` | backend | **Set in production.** Error reporting and alerting. Unset, unhandled errors reach only the host's log (as tracebacks, when `DEBUG` is off) |
+| `JWT_REFRESH_COOKIE_SAMESITE` | backend | `Lax` (default) for the same-site topology below. `None` only for a genuinely cross-site deployment, and browsers that block third-party cookies will drop the cookie anyway |
 | `CLOUDINARY_AUTH_TOKEN_KEY` | backend | Optional. Makes signed receipt URLs time-limited. Without it they are signed but do not expire -- still private, but a leaked URL keeps working |
 | `DJANGO_ADMIN_ENABLED` | backend | `False` removes the Django admin route entirely. It is a full read/write console over every gym, behind a password alone |
 | `DJANGO_ADMIN_URL` | backend | Moves the admin off `/admin/`, which is the path undirected scanning looks for. Default `admin/` |
@@ -160,6 +161,43 @@ Key ones:
    unhandled error still reaches the Render log as a traceback, but nothing
    alerts anyone and repeats are not grouped.
 
+### Put the portal and the API on one site
+
+Signing in survives a reload because the refresh token is an httpOnly cookie on
+the API's host, and the access token lives only in memory. A browser sends that
+cookie back only if it considers the request same-site -- and `app.vercel.app`
+and `api.onrender.com` are *different* sites, because both of those are public
+suffixes. Safari and iOS block third-party cookies outright, so on the default
+hostnames members are signed out on every reload and every fifteen minutes,
+with nothing in the log to say why.
+
+So give both halves one domain you own:
+
+| | Host | Points at |
+|---|---|---|
+| Portal | `app.<your-domain>` | Vercel |
+| API | `api.<your-domain>` | Render |
+
+Then set, on Render: `ALLOWED_HOSTS` including `api.<your-domain>`,
+`CORS_ALLOWED_ORIGINS` and `CSRF_TRUSTED_ORIGINS` to `https://app.<your-domain>`,
+and `FRONTEND_URL` to the same. On Vercel: `VITE_API_URL` to
+`https://api.<your-domain>/api`. The cookie stays `Secure`, `HttpOnly` and
+`SameSite=Lax`, which is the default and needs no extra configuration.
+
+Deploying on the platforms' own hostnames instead means setting
+`JWT_REFRESH_COOKIE_SAMESITE=None`, and accepting that Safari and iOS users will
+keep being signed out. Verify whichever you choose on a real iPhone: sign in,
+reload, and wait more than fifteen minutes.
+
+### What a Redis outage does
+
+Rate limits and the record of ended sessions both live in Redis, and they fail
+differently on purpose. The limits stop counting for the duration, so the API
+keeps serving; ending a session is refused with a `503` rather than guessed at,
+so a signed-out session cannot come back because a cache was unreachable. That
+means while Redis is down, signed-in requests are refused and public pages still
+work. Cache calls give up after `REDIS_TIMEOUT_SECONDS` rather than stalling.
+
 ### Confirming NUM_PROXIES
 
 The rate limits key on the client's address, and behind Render the socket
@@ -178,7 +216,9 @@ what actually arrives -- observe it rather than assume it:
    records every visitor's address -- and redeploy.
 
 Check again whenever anything is added in front of the service (a CDN, a proxy,
-a Vercel rewrite): each hop that appends to the header shifts the count.
+a Vercel rewrite): each hop that appends to the header shifts the count. The
+security log reads the caller's address the same way the limiter does, so both
+name the same person (`core.client_ip`).
 
 ## What's in it
 
@@ -370,9 +410,11 @@ one-time device key when it finishes.
 
 `build.sh` runs the two catalogue imports on every deploy. The rest are not
 wired up automatically; run them from a scheduler (the included `render.yaml`
-has a nightly cron service, which needs a paid Render plan and the same
-`SECRET_KEY`, `DATABASE_URL` and `TIME_ZONE` as the web service). All are safe
-to re-run.
+has a nightly cron service running `backend/nightly.sh`, which needs a paid
+Render plan and the same `SECRET_KEY`, `DATABASE_URL` and `TIME_ZONE` as the web
+service). All are safe to re-run, and each sweeps every gym in turn -- a
+scheduled job starts with no gym in scope, so it has to say which one it means.
+A gym that fails is reported and does not stop the others.
 
 | Command | What it does |
 |---|---|

@@ -35,12 +35,19 @@ from tenancy.people import holds_standing_elsewhere
 from core.security_log import security_event
 from .tokens import revoke_refresh_tokens
 
-COOKIE_KWARGS = dict(
-    httponly=True,
-    secure=settings.JWT_REFRESH_COOKIE_SECURE,
-    samesite=settings.JWT_REFRESH_COOKIE_SAMESITE,
-    path="/api/auth/",
-)
+def cookie_kwargs():
+    """How the refresh cookie is written.
+
+    Read per call rather than once at import: `SameSite` is deployment
+    configuration (see settings), and a value frozen at import time cannot be
+    exercised or overridden by anything that changes it afterwards.
+    """
+    return dict(
+        httponly=True,
+        secure=settings.JWT_REFRESH_COOKIE_SECURE,
+        samesite=settings.JWT_REFRESH_COOKIE_SAMESITE,
+        path="/api/auth/",
+    )
 
 
 def _set_refresh_cookie(response, refresh_token: str):
@@ -48,7 +55,7 @@ def _set_refresh_cookie(response, refresh_token: str):
         settings.JWT_REFRESH_COOKIE_NAME,
         str(refresh_token),
         max_age=int(settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds()),
-        **COOKIE_KWARGS,
+        **cookie_kwargs(),
     )
 
 
@@ -142,6 +149,8 @@ def _end_sessions_if_replayed(raw_token):
     from rest_framework_simplejwt.state import token_backend
     from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 
+    from .revocation import RevocationUnavailable
+
     try:
         # Signature and expiry still have to be genuine: only a real token of
         # ours, refused solely for being used up, is evidence of a replay.
@@ -162,8 +171,20 @@ def _end_sessions_if_replayed(raw_token):
     user = User.objects.filter(pk=payload.get(jwt_settings.USER_ID_CLAIM)).first()
     if user is None:
         return
-    revoke_refresh_tokens(user)
+    # Recorded before the revocation runs, and the revocation's own failure
+    # caught: a replay is the one event here that must reach the log whatever
+    # else is broken, and the caller is inside the branch that answers a reused
+    # token with a 401. Letting a cache outage turn that into a 503 would hand
+    # whoever is replaying the token a different answer than everyone else gets
+    # -- and the durable half, blacklisting every refresh token, has already
+    # happened by the time this can raise.
     security_event("refresh_token_replayed", warning=True, user=user.pk, reason="ended_every_session")
+    try:
+        revoke_refresh_tokens(user)
+    except RevocationUnavailable:
+        logging.getLogger(__name__).warning(
+            "replay defence: refresh tokens blacklisted, access tokens left to expire"
+        )
 
 
 def _record_outstanding(refresh, user, raw):

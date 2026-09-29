@@ -21,3 +21,6 @@ frontend/.env.local
 Thumbs.db
 # Playwright CLI output (may contain credentials)
 .playwright-cli/
+# Playwright MCP output: page snapshots and console logs, written wherever it
+# is run from.
+.playwright-mcp/

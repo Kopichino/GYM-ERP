@@ -174,22 +174,18 @@ def send_expiry_reminders(on=None, tenant=None):
 
 
 def sweep_all_tenants(on=None):
-    """Run the nightly sweep once per gym. Returns (sent, skipped) totalled.
+    """Run the nightly sweep once per gym. Returns (sent, skipped, failures).
 
     Each gym is swept inside its own scope, so a query that forgets to filter
     still cannot reach across -- the same guarantee a request gets. A gym that
     raises does not stop the others: one misconfigured branch should not mean
-    nobody on the platform gets their renewal notice.
+    nobody on the platform gets their renewal notice. `failures` is the list of
+    `(tenant, exception)` that did raise, so the caller can say so and exit
+    non-zero rather than reporting a clean run.
     """
-    from tenancy.models import Tenant
+    from tenancy.sweeps import for_each_tenant
 
-    sent = skipped = 0
-    for tenant in Tenant.objects.filter(is_active=True).iterator():
-        try:
-            gym_sent, gym_skipped = send_expiry_reminders(on=on, tenant=tenant)
-        except Exception:  # noqa: BLE001 -- one gym must not stop the sweep
-            logger.exception("expiry sweep failed for tenant %s", tenant.slug)
-            continue
-        sent += gym_sent
-        skipped += gym_skipped
-    return sent, skipped
+    results, failures = for_each_tenant(lambda tenant: send_expiry_reminders(on=on))
+    sent = sum(gym_sent for _, (gym_sent, _) in results)
+    skipped = sum(gym_skipped for _, (_, gym_skipped) in results)
+    return sent, skipped, failures

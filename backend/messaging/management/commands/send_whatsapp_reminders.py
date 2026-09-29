@@ -1,7 +1,7 @@
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from messaging.services import send_expiry_reminders
+from messaging.services import sweep_all_tenants
 from messaging.whatsapp import is_configured
 
 
@@ -29,7 +29,8 @@ class Command(BaseCommand):
                 )
             )
             return
-        sent, skipped = send_expiry_reminders(
+        # Gym by gym: cron starts with no tenant in scope.
+        sent, skipped, failures = sweep_all_tenants(
             timezone.localdate(), template=options["template"]
         )
         self.stdout.write(
@@ -38,3 +39,8 @@ class Command(BaseCommand):
                 "(already nudged today, or no number on file)."
             )
         )
+        if failures:
+            raise CommandError(
+                "Failed for: "
+                + ", ".join(f"{tenant.slug} ({error})" for tenant, error in failures)
+            )

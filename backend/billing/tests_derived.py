@@ -20,7 +20,7 @@ from django.core.management import call_command
 from django.utils import timezone
 from rest_framework.test import APITestCase
 
-from core.testing import TenantAPIMixin
+from core.testing import TenantAPIMixin, enrol
 
 from accounts.models import MembershipStatus, MemberProfile, Role
 
@@ -162,7 +162,9 @@ class ExpireSubscriptionsCommandTests(TenantAPIMixin, APITestCase):
         self.today = timezone.localdate()
 
     def _member(self, username, ends_in_days, status=MembershipStatus.ACTIVE):
-        member = make_user(username)
+        # Enrolled, because the sweep works gym by gym and a member with no
+        # standing anywhere is nobody the sweep should be reading.
+        member = enrol(make_user(username))
         record_payment(
             member=member,
             plan=self.plan,

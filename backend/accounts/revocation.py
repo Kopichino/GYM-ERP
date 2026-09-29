@@ -18,13 +18,35 @@ token could still be live, so neither needs a table or a clean-up job:
 With a per-process cache (LocMemCache) a revocation is only seen by the worker
 that recorded it. Production has to run on a shared cache (REDIS_URL) for these
 to hold across workers -- `core.checks` warns when it does not.
+
+This reads and writes the `revocation` cache, which is deliberately **not** the
+resilient one the throttles use. If it cannot be reached, the honest answer to
+"has this session been ended?" is "I cannot tell", and the safe thing to do with
+that answer is refuse: a `RevocationUnavailable` (503), never a quiet "no".
+Otherwise the first thing a Redis outage would restore is every session somebody
+had just logged out of. See core.cache.
 """
 
 import time
 
 from django.conf import settings
-from django.core.cache import cache
+from django.core.cache import caches
+from rest_framework.exceptions import APIException
 from rest_framework_simplejwt.settings import api_settings as jwt_settings
+
+from core.cache import redis_error_class
+
+
+class RevocationUnavailable(APIException):
+    """The revocation store is unreachable, so nothing may be taken on trust."""
+
+    status_code = 503
+    default_detail = "Sign-in state is temporarily unavailable. Please try again."
+    default_code = "revocation_unavailable"
+
+
+def _cache():
+    return caches["revocation"]
 
 
 def _access_lifetime():
@@ -46,19 +68,34 @@ def revoke_access_token(token):
     if not jti:
         return
     remaining = int(payload.get("exp", 0) - time.time())
-    cache.set(_token_key(jti), 1, timeout=max(remaining, 1))
+    try:
+        _cache().set(_token_key(jti), 1, timeout=max(remaining, 1))
+    except redis_error_class() as error:
+        # Logging out has to fail loudly: reporting success while the record
+        # never landed would leave the session alive and the member sure it was
+        # not.
+        raise RevocationUnavailable() from error
 
 
 def end_access_tokens(user):
     """End every access token `user` was issued before this second."""
-    cache.set(_cutoff_key(user.pk), int(time.time()), timeout=_access_lifetime() + 60)
+    try:
+        _cache().set(
+            _cutoff_key(user.pk), int(time.time()), timeout=_access_lifetime() + 60
+        )
+    except redis_error_class() as error:
+        raise RevocationUnavailable() from error
 
 
 def is_revoked(token):
     payload = getattr(token, "payload", None) or {}
     jti = payload.get(jwt_settings.JTI_CLAIM)
-    if jti and cache.get(_token_key(jti)):
-        return True
-    cutoff = cache.get(_cutoff_key(payload.get(jwt_settings.USER_ID_CLAIM)))
+    try:
+        if jti and _cache().get(_token_key(jti)):
+            return True
+        cutoff = _cache().get(_cutoff_key(payload.get(jwt_settings.USER_ID_CLAIM)))
+    except redis_error_class() as error:
+        # Fail closed. "I cannot reach the record" is not "there is no record".
+        raise RevocationUnavailable() from error
     issued = payload.get("iat")
     return cutoff is not None and issued is not None and int(issued) < int(cutoff)
