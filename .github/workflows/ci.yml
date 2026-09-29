@@ -184,10 +184,27 @@ jobs:
           import os, django
           os.environ.setdefault("DJANGO_SETTINGS_MODULE", "gymerp.settings")
           django.setup()
+          from django.conf import settings
           from django.core.cache import caches
+          from django.core.cache.backends.redis import RedisCache
+          from core.cache import ResilientRedisCache
+
+          assert settings.REDIS_URL, "REDIS_URL is unset; throttle state would be per-process"
+
           cache = caches["default"]
-          assert "redis" in type(cache).__module__, f"expected Redis, got {type(cache)}"
+          # What the cache *is*, not which module it was defined in. The
+          # resilient backend wraps Django's Redis cache and therefore lives in
+          # core.cache, so asking whether "redis" appeared in its module name
+          # answered no for a correctly configured deployment.
+          assert isinstance(cache, ResilientRedisCache), f"expected ResilientRedisCache, got {type(cache)}"
+          assert isinstance(cache, RedisCache), f"{type(cache)} does not speak Redis"
+
+          # Straight at the server, because the wrapper answers an unreachable
+          # Redis with the caller's default: a round-trip alone would read as an
+          # ordinary miss rather than an outage. This raises instead.
+          cache._cache.get_client(write=True).ping()
+
           cache.set("ci-probe", "ok", 30)
           assert cache.get("ci-probe") == "ok", "Redis cache did not round-trip"
-          print("shared cache reachable; throttle state will survive a restart")
+          print(f"shared cache reachable ({type(cache).__name__}); throttle state will survive a restart")
           PY
