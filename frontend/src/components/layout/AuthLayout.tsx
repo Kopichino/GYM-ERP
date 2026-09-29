@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useBranding } from "../../hooks/useBranding";
 import BrandMark from "../BrandMark";
+import FloatingGymBackground from "./FloatingGymBackground";
 
 /** A barbell, drawn rather than illustrated: it scales cleanly, costs nothing
  *  to load, and takes the gym's own accent colour so a white-labelled install
@@ -78,9 +79,13 @@ export default function AuthLayout({
   // The explicit order matters: the other two halves are ordered so they can
   // swap sides, and an unordered flex child defaults to 0, which threw the
   // stripe back to the left edge on signup no matter where it sat in the JSX.
+  // The equipment field is painted over the layout's own backgrounds and under
+  // everything that carries content, so the halves stay unpositioned (their
+  // backgrounds below the field) and the content inside them is lifted to
+  // `z-20`. Position only -- nothing about the design changes.
   const stripe = (
     <div
-      className={`hidden w-2 shrink-0 lg:block ${isSignup ? "lg:order-3" : ""}`}
+      className={`relative z-20 hidden w-2 shrink-0 lg:block ${isSignup ? "lg:order-3" : ""}`}
       style={{ background: `linear-gradient(180deg, ${lead}, ${trail})` }}
     />
   );
@@ -93,7 +98,7 @@ export default function AuthLayout({
         isSignup ? "lg:order-2 lg:w-[42%] lg:max-w-[640px]" : "lg:w-[44%] lg:max-w-[560px]"
       }`}
     >
-      <BrandMark className="font-display text-2xl tracking-wide text-[var(--color-text)]" />
+      <BrandMark className="relative z-20 font-display text-2xl tracking-wide text-[var(--color-text)]" />
 
       {/* Login is centred in whatever space is left. Signup is top-aligned on
           a short screen, because a six-field form centred there ends up with
@@ -102,7 +107,7 @@ export default function AuthLayout({
           top-aligned on a tall monitor left the bottom half of the column
           empty. */}
       <div
-        className={`flex flex-1 py-8 ${isSignup ? "auth-signup-body items-start pt-10" : "items-center"}`}
+        className={`relative z-20 flex flex-1 py-8 ${isSignup ? "auth-signup-body items-start pt-10" : "items-center"}`}
       >
         <div className={`w-full ${isSignup ? "max-w-md" : "max-w-sm"}`}>
           <h1
@@ -120,7 +125,7 @@ export default function AuthLayout({
         </div>
       </div>
 
-      <div className="text-sm text-[var(--color-text-muted)]">{footer}</div>
+      <div className="relative z-20 text-sm text-[var(--color-text-muted)]">{footer}</div>
     </div>
   );
 
@@ -151,7 +156,7 @@ export default function AuthLayout({
         }}
       />
 
-      <div className="relative flex h-full flex-col justify-center px-12 xl:px-16">
+      <div className="relative z-20 flex h-full flex-col justify-center px-12 xl:px-16">
         {isSignup ? (
           <SignupAside gymName={branding?.name || "IRONCORE"} accent={lead} />
         ) : (
@@ -177,8 +182,15 @@ export default function AuthLayout({
     <div
       data-theme="dark"
       style={{ colorScheme: "dark" }}
-      className="flex min-h-screen bg-[var(--color-bg)] text-[var(--color-text)]"
+      // `relative` so the equipment field, which is absolutely positioned, is
+      // laid out against this element. The field sits at `z-10` and everything
+      // carrying content at `z-20`, which is all the ordering this needs.
+      className="relative flex min-h-screen bg-[var(--color-bg)] text-[var(--color-text)]"
     >
+      {/* Atmosphere only, and entirely behind the content above: see
+          FloatingGymBackground. */}
+      <FloatingGymBackground />
+
       {/* The stripe sits on the outer edge of the form half, so it moves from
           the far left on login to the far right on signup. */}
       {!isSignup && stripe}

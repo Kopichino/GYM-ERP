@@ -306,3 +306,178 @@ body {
     animation: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   The floating equipment field behind the sign-in screens
+   (components/layout/FloatingGymBackground.tsx).
+
+   Each piece crosses the whole viewport and turns at the edges, like something
+   adrift in a tank. The two axes run on separate clocks -- a piece takes one
+   length of time to cross horizontally and a different one vertically -- so it
+   traces long angled paths rather than bouncing along a single diagonal, and no
+   two pieces ever travel together.
+
+   Everything animates `transform` and nothing else, so the field stays on the
+   compositor and off the layout path. Sixty-odd pieces, no JavaScript in the
+   loop, and React renders the whole thing exactly once.
+
+   The parallax arrives as two unitless numbers (-1..1) written to `--fgb-x` /
+   `--fgb-y` by a single pointer listener; each layer multiplies them by its own
+   depth.
+   --------------------------------------------------------------------------- */
+
+.fgb {
+  position: absolute;
+  inset: 0;
+  /* Above the layout's backgrounds, below everything that carries content
+     (which sits at `z-20`), so equipment drifts across the whole screen and
+     always passes behind the form rather than over it. */
+  z-index: 10;
+  overflow: hidden;
+  pointer-events: none;
+  --fgb-x: 0;
+  --fgb-y: 0;
+}
+
+.fgb-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.fgb-layer {
+  position: absolute;
+  inset: 0;
+  transform: translate3d(
+    calc(var(--fgb-x) * var(--fgb-depth)),
+    calc(var(--fgb-y) * var(--fgb-depth)),
+    0
+  );
+  /* Long enough that the layer glides after the pointer rather than tracking
+     it -- the effect should read as depth, not as a cursor toy. */
+  transition: transform 600ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+/* Furthest away: softly out of focus. */
+.fgb-layer[data-depth="0"] {
+  filter: blur(1.4px);
+}
+
+/* The horizontal journey. Every piece starts at the left edge and is thrown
+   along its path by a negative delay, which is what scatters the field. */
+.fgb-piece {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--fgb-size);
+  height: var(--fgb-size);
+  animation: fgb-cross-x var(--fgb-duration-x) linear var(--fgb-delay-x) infinite alternate;
+}
+
+/* The vertical journey, on its own clock. */
+.fgb-piece-y {
+  display: block;
+  width: 100%;
+  height: 100%;
+  animation: fgb-cross-y var(--fgb-duration-y) linear var(--fgb-delay-y) infinite alternate;
+}
+
+.fgb-piece svg {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--fgb-hue);
+  opacity: var(--fgb-opacity);
+  /* Restrained: a lit edge, not a neon sign. */
+  filter: drop-shadow(0 0 6px color-mix(in srgb, currentColor 35%, transparent));
+  /* One slow turn, direction set per piece. Minutes, not seconds: this reads as
+     something adrift, not as a spinning icon. */
+  animation: fgb-turn var(--fgb-spin) linear infinite;
+}
+
+@keyframes fgb-cross-x {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(100vw - var(--fgb-size)));
+  }
+}
+
+@keyframes fgb-cross-y {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(calc(100vh - var(--fgb-size)));
+  }
+}
+
+@keyframes fgb-turn {
+  from {
+    rotate: var(--fgb-rotate);
+  }
+  to {
+    rotate: calc(var(--fgb-rotate) + 360deg);
+  }
+}
+
+/* Tablet: fewer objects, softer glow. */
+@media (max-width: 1023px) {
+  .fgb-layer > :nth-child(n + 13) {
+    display: none;
+  }
+  .fgb-piece svg {
+    filter: drop-shadow(0 0 4px color-mix(in srgb, currentColor 28%, transparent));
+  }
+}
+
+/* Phone: fewer still, dimmer, and held back from the middle of the screen,
+   where on a narrow layout the form fills everything. */
+@media (max-width: 639px) {
+  .fgb-layer > :nth-child(n + 8) {
+    display: none;
+  }
+  .fgb-piece svg {
+    opacity: calc(var(--fgb-opacity) * 0.7);
+  }
+  .fgb {
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      #000 0%,
+      rgba(0, 0, 0, 0.25) 26%,
+      rgba(0, 0, 0, 0.25) 74%,
+      #000 100%
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      #000 0%,
+      rgba(0, 0, 0, 0.25) 26%,
+      rgba(0, 0, 0, 0.25) 74%,
+      #000 100%
+    );
+  }
+}
+
+/*
+ * Reduced motion: everything stops where it stands.
+ *
+ * Paused rather than cancelled, because each piece's position *is* its
+ * animation -- a negative delay carried it there. Cancelling would stack the
+ * whole field in the top-left corner; pausing keeps the scatter and takes away
+ * the movement, which is what was asked for.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .fgb-piece,
+  .fgb-piece-y,
+  .fgb-piece svg {
+    animation-play-state: paused;
+  }
+  .fgb-layer {
+    transition: none;
+  }
+}
