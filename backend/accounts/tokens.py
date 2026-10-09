@@ -55,6 +55,17 @@ def revoke_refresh_tokens(user):
             continue
         revoked += int(created)
 
+    # The sessions those tokens belonged to, still before the cache is touched.
+    # Refresh checks the session row as well as the token, so this is what makes
+    # "signed out everywhere" true of a remembered or trusted device too -- and,
+    # being a table like the blacklist, it holds when the cache is down.
+    from .auth_sessions import end_all_sessions
+
+    try:
+        end_all_sessions(user)
+    except Exception:  # noqa: BLE001 -- best effort, like the loop above
+        logger.exception("could not end sessions for user %s", user.pk)
+
     # Then the short-lived half. Access tokens already handed out would
     # otherwise keep working for up to fifteen minutes after the reset that was
     # meant to lock someone out. See accounts.revocation.

@@ -349,9 +349,37 @@ REST_FRAMEWORK = {
 
 from datetime import timedelta  # noqa: E402
 
+# --- How long a sign-in lasts ---------------------------------------------
+#
+# The access token stays short (15 minutes, below). What keeps someone signed in
+# across a closed browser is the refresh token in an httpOnly cookie, and these
+# are its ceilings, counted from the moment of login. A session is never
+# extended by being used: each rotation hands out a token that ends at the same
+# instant as the last, so a tab left open cannot keep a stolen session alive.
+#
+#   AUTH_SESSION_MAX_AGE         a normal sign-in                (default 7 days)
+#   AUTH_REMEMBER_ME_MAX_AGE     "Remember me" ticked            (default 30 days)
+#   AUTH_TRUSTED_DEVICE_MAX_AGE  "Trust this device" ticked      (default 90 days)
+#
+# Set in whole seconds. Anything shorter than an hour, longer than a year, or out
+# of order (normal <= remember <= trusted) stops the process starting, rather
+# than quietly producing a session that never ends. See accounts.session_policy.
+from accounts.session_policy import validate_lifetimes  # noqa: E402
+
+AUTH_SESSION_MAX_AGE = timedelta(seconds=env.int("AUTH_SESSION_MAX_AGE", default=7 * 24 * 60 * 60))
+AUTH_REMEMBER_ME_MAX_AGE = timedelta(
+    seconds=env.int("AUTH_REMEMBER_ME_MAX_AGE", default=30 * 24 * 60 * 60)
+)
+AUTH_TRUSTED_DEVICE_MAX_AGE = timedelta(
+    seconds=env.int("AUTH_TRUSTED_DEVICE_MAX_AGE", default=90 * 24 * 60 * 60)
+)
+validate_lifetimes(AUTH_SESSION_MAX_AGE, AUTH_REMEMBER_ME_MAX_AGE, AUTH_TRUSTED_DEVICE_MAX_AGE)
+
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
-    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    # What the library itself would give a token. Every session opened through
+    # accounts.auth_sessions sets its own expiry; this keeps the two in step.
+    "REFRESH_TOKEN_LIFETIME": AUTH_SESSION_MAX_AGE,
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),

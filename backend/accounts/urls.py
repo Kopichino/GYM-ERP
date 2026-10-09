@@ -12,6 +12,9 @@ urlpatterns = [
     path("login/", views.LoginView.as_view(), name="login"),
     path("refresh/", views.RefreshView.as_view(), name="refresh"),
     path("logout/", views.LogoutView.as_view(), name="logout"),
+    # Your own signed-in devices -- about the person, so no tenant prefix.
+    path("sessions/", views.SessionListView.as_view(), name="auth-sessions"),
+    path("sessions/<int:pk>/", views.SessionDetailView.as_view(), name="auth-session-detail"),
     path("me/", views.MeView.as_view(), name="me"),
     # About the person rather than a gym, so no tenant prefix -- see passwords.py.
     path("password/forgot/", PasswordForgotView.as_view(), name="password-forgot"),

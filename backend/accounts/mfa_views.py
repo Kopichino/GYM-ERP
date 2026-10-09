@@ -25,6 +25,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from . import mfa
+from .auth_sessions import kind_from_request
 from .models import MfaDevice, MfaRecoveryCode
 from .throttling import MfaAttemptHourlyThrottle, MfaAttemptThrottle
 from core.security_log import security_event
@@ -173,6 +174,11 @@ class _SignInStep(APIView):
     def pending_user(self, request):
         return mfa.user_from_pending(request.data.get("mfa_token"))
 
+    def pending_kind(self, request):
+        """What the person chose at the password step, as the signed token recorded it.
+        Whatever the second step's own body says about it is ignored."""
+        return mfa.pending_kind(request.data.get("mfa_token"))
+
 
 class MfaLoginVerifyView(_SignInStep):
     """Step two: a code from the authenticator app, or one recovery code."""
@@ -204,12 +210,14 @@ class MfaLoginVerifyView(_SignInStep):
                     "used_recovery_code": True,
                     "recovery_codes_remaining": remaining_recovery_codes(user),
                 },
+                kind=self.pending_kind(request),
+                request=request,
             )
 
         if not consume_code(device, request.data.get("code")):
             security_event("mfa_code_failed", request, warning=True, user=user.pk)
             return Response(WRONG_CODE, status=status.HTTP_400_BAD_REQUEST)
-        return session_response(user)
+        return session_response(user, kind=self.pending_kind(request), request=request)
 
 
 class MfaLoginSetupView(_SignInStep):
@@ -241,7 +249,9 @@ class MfaLoginConfirmView(_SignInStep):
         codes, error = confirm_pending(user, request.data.get("code"))
         if error:
             return Response(error, status=status.HTTP_400_BAD_REQUEST)
-        return session_response(user, {"recovery_codes": codes})
+        return session_response(
+            user, {"recovery_codes": codes}, kind=self.pending_kind(request), request=request
+        )
 
 
 # ---------------------------------------------------------------- signed in
@@ -291,8 +301,11 @@ class MfaConfirmView(APIView):
         # Sessions opened with the old authenticator end -- the usual reason to
         # replace one is that the old phone is gone. This one is re-issued, so
         # the page you did it on stays signed in.
+        # Read before the revoke, which ends it: the page that did this keeps
+        # the kind of sign-in it had.
+        kind = kind_from_request(request)
         revoke_refresh_tokens(request.user)
-        return session_response(request.user, {"recovery_codes": codes})
+        return session_response(request.user, {"recovery_codes": codes}, kind=kind, request=request)
 
 
 class MfaRecoveryCodesView(APIView):

@@ -2,8 +2,10 @@ import openpyxl
 from django.conf import settings
 from django.contrib.auth import password_validation
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import generics, status
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -22,7 +24,21 @@ from core.permissions import IsAdmin, IsTrainer
 from core.spreadsheets import neutralise_formulas
 
 from . import mfa
-from .models import Role, User
+from .auth_sessions import (
+    SECRET_CLAIM,
+    access_for,
+    ceiling,
+    end_session,
+    find_session,
+    kind_for_login,
+    note_token,
+    open_session,
+    seconds_left,
+    session_from_cookie,
+    start_session,
+)
+from .models import AuthSession, Role, User
+from .session_policy import NORMAL
 from .serializers import (
     AdminMemberSerializer,
     AdminUserSerializer,
@@ -50,22 +66,37 @@ def cookie_kwargs():
     )
 
 
-def _set_refresh_cookie(response, refresh_token: str):
+def _set_refresh_cookie(response, refresh_token: str, max_age=None):
+    """Write the refresh cookie.
+
+    `max_age` is how long the *session* has left, not a fixed lifetime: it is a
+    persistent cookie that outlives the browser, but never the session it carries.
+    """
+    if max_age is None:
+        max_age = int(settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds())
     response.set_cookie(
         settings.JWT_REFRESH_COOKIE_NAME,
         str(refresh_token),
-        max_age=int(settings.SIMPLE_JWT["REFRESH_TOKEN_LIFETIME"].total_seconds()),
+        max_age=max_age,
         **cookie_kwargs(),
     )
 
 
-def session_response(user, extra=None):
+def session_response(user, extra=None, *, kind=NORMAL, request=None):
     """Sign `user` in: the access token in the body, the refresh token as the
     httpOnly cookie. The one place a session is opened, so every way in -- a
-    code, a recovery code, finishing setup -- hands out the same thing."""
-    refresh = RefreshToken.for_user(user)
-    response = Response({"access": str(refresh.access_token), **(extra or {})})
-    _set_refresh_cookie(response, str(refresh))
+    code, a recovery code, finishing setup -- hands out the same thing.
+
+    `kind` is the person's choice at the password step ("remember me", "trust this
+    device"), carried through two-step sign-in in the signed pending token. It sets
+    how long the session lasts and nothing else: it is never a reason to skip a
+    password or a code.
+    """
+    session, refresh = open_session(user, kind, request)
+    response = Response({"access": str(access_for(refresh)), **(extra or {})})
+    _set_refresh_cookie(response, str(refresh), max_age=seconds_left(session))
+    if kind != NORMAL:
+        security_event("persistent_session_opened", request, user=user.pk, reason=kind)
     return response
 
 
@@ -116,15 +147,18 @@ class LoginView(TokenObtainPairView):
             security_event("login_failed", request, warning=True, username=request.data.get("username"))
             raise
         user = serializer.user
+        # Asked for only after the password was right, and used only to decide how
+        # long the session lasts. Kept in the pending token across the second step.
+        kind = kind_for_login(request.data.get("remember_me"), request.data.get("trust_device"))
 
         # An account with an authenticator always uses it, whatever the setting:
         # switching the requirement off must not quietly weaken the accounts of
         # people who set it up.
         if mfa.has_confirmed_device(user):
-            return Response({"mfa_required": True, "mfa_token": mfa.pending_token(user)})
+            return Response({"mfa_required": True, "mfa_token": mfa.pending_token(user, kind)})
         if mfa.required_for(user):
-            return Response({"mfa_setup_required": True, "mfa_token": mfa.pending_token(user)})
-        return session_response(user)
+            return Response({"mfa_setup_required": True, "mfa_token": mfa.pending_token(user, kind)})
+        return session_response(user, kind=kind, request=request)
 
 
 #: How long after rotation a second use of the old refresh token still counts as
@@ -203,6 +237,18 @@ def _record_outstanding(refresh, user, raw):
     )
 
 
+def _session_gone(reason):
+    """The refresh cookie names a session that is over. Not a theft: nothing here
+    touches anyone else's sessions, and the browser is told to forget the cookie."""
+    detail = {
+        "session_ended": "This session has ended. Sign in again.",
+        "session_expired": "This session has expired. Sign in again.",
+    }[reason]
+    response = Response({"detail": detail, "reason": reason}, status=status.HTTP_401_UNAUTHORIZED)
+    response.delete_cookie(settings.JWT_REFRESH_COOKIE_NAME, path="/api/auth/")
+    return response
+
+
 class RefreshView(APIView):
     """Reads the refresh token from the httpOnly cookie (not the body),
     rotates it, and returns a fresh access token.
@@ -210,7 +256,12 @@ class RefreshView(APIView):
     A session is kept alive only for an account that meets the sign-in rules as
     they stand now, not as they stood when it was opened. Without that, turning
     two-step sign-in on would leave every existing session running without it
-    for up to another week.
+    until it ended.
+
+    Rotating never extends a session. Each token is good until the session's
+    ceiling, fixed at login, so a session that is used every day still ends on
+    the day it was always going to -- and is refused here, by the server, even if
+    the token in the cookie has time left on it.
     """
 
     permission_classes = [AllowAny]
@@ -241,29 +292,49 @@ class RefreshView(APIView):
             response.delete_cookie(settings.JWT_REFRESH_COOKIE_NAME, path="/api/auth/")
             return response
 
+        # Is the session behind this token still allowed to continue? Checked in
+        # the database, so a revocation holds whatever the cache is doing.
+        secret = refresh.payload.get(SECRET_CLAIM)
+        session = find_session(secret, user)
+        if secret:
+            if session is None or session.revoked_at is not None:
+                return _session_gone("session_ended")
+            if session.expires_at <= timezone.now():
+                return _session_gone("session_expired")
+
         try:
-            access = refresh.access_token
-            # Mirror SimpleJWT's own TokenRefreshSerializer rotation order:
-            # blacklist the old jti first, then mutate this token into a new
-            # one (new jti/exp/iat) so ROTATE_REFRESH_TOKENS is honored.
-            try:
-                refresh.blacklist()
-            except AttributeError:
-                pass
-            refresh.set_jti()
-            refresh.set_exp()
-            refresh.set_iat()
-            new_refresh = str(refresh)
-            # Record the rotated token as outstanding. Without the row, revoking
-            # "every" refresh token of the account -- a password change, a
-            # reset, a detected replay -- only reached the token issued at
-            # sign-in, and the one actually in the browser lived on for a week.
-            _record_outstanding(refresh, user, new_refresh)
+            with transaction.atomic():
+                if not secret:
+                    # A token from before sessions were recorded, still in somebody's
+                    # browser. It is taken in as a normal session counted from now,
+                    # rather than refused, so shipping this signs nobody out.
+                    session, secret = start_session(user, NORMAL, request)
+                    refresh[SECRET_CLAIM] = secret
+                # Taken before the rotation below, as SimpleJWT's own serializer does.
+                access = access_for(refresh)
+                # Mirror SimpleJWT's own TokenRefreshSerializer rotation order:
+                # blacklist the old jti first, then mutate this token into a new
+                # one (new jti/iat) so ROTATE_REFRESH_TOKENS is honored. The expiry
+                # is the session's ceiling and does not move.
+                try:
+                    refresh.blacklist()
+                except AttributeError:
+                    pass
+                refresh.set_jti()
+                refresh.payload["exp"] = ceiling(session)
+                refresh.set_iat()
+                new_refresh = str(refresh)
+                # Record the rotated token as outstanding. Without the row, revoking
+                # "every" refresh token of the account -- a password change, a
+                # reset, a detected replay -- only reached the token issued at
+                # sign-in, and the one actually in the browser lived on.
+                _record_outstanding(refresh, user, new_refresh)
+                note_token(session, refresh)
         except TokenError:
             return Response({"detail": "Invalid or expired refresh token."}, status=status.HTTP_401_UNAUTHORIZED)
 
         response = Response({"access": str(access)})
-        _set_refresh_cookie(response, new_refresh)
+        _set_refresh_cookie(response, new_refresh, max_age=seconds_left(session))
         return response
 
 
@@ -273,6 +344,12 @@ class LogoutView(APIView):
     def post(self, request, *args, **kwargs):
         raw_token = request.COOKIES.get(settings.JWT_REFRESH_COOKIE_NAME)
         if raw_token:
+            # The session first, then the token: ending the session is what stops
+            # this device being signed back in, and it is found through the
+            # cookie's secret, so a cookie one rotation behind still reaches it.
+            session = session_from_cookie(request)
+            if session is not None:
+                end_session(session)
             try:
                 RefreshToken(raw_token).blacklist()
             except TokenError:
@@ -285,6 +362,66 @@ class LogoutView(APIView):
             revoke_access_token(request.auth)
         response = Response(status=status.HTTP_204_NO_CONTENT)
         response.delete_cookie(settings.JWT_REFRESH_COOKIE_NAME, path="/api/auth/")
+        return response
+
+
+def _describe_session(session, current_pk):
+    """What a person is shown about one of their sessions. No secret, no token."""
+    return {
+        "id": session.pk,
+        "kind": session.kind,
+        "label": session.label or "Unknown device",
+        "created_at": session.created_at,
+        "last_seen_at": session.last_seen_at,
+        "expires_at": session.expires_at,
+        "current": session.pk == current_pk,
+    }
+
+
+def _live_sessions(user):
+    return AuthSession.objects.filter(
+        user=user, revoked_at__isnull=True, expires_at__gt=timezone.now()
+    )
+
+
+class SessionListView(APIView):
+    """Your own signed-in devices, newest use first.
+
+    About the person, so it is not under a gym. Another account's sessions are
+    not reachable here at all: the query starts from `request.user`.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        current = session_from_cookie(request)
+        current_pk = current.pk if current is not None else None
+        rows = _live_sessions(request.user).order_by("-last_seen_at")
+        return Response([_describe_session(row, current_pk) for row in rows])
+
+
+class SessionDetailView(APIView):
+    """Sign one of your own devices out.
+
+    The device's refresh token is deliberately left alone rather than blacklisted:
+    a blacklisted token turning up again is read as a theft and ends *every*
+    session, which is the wrong reward for revoking an old laptop. The session row
+    is what refresh checks, and it holds whatever the cache is doing. Its access
+    token, at most fifteen minutes old, simply runs out.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, pk):
+        session = _live_sessions(request.user).filter(pk=pk).first()
+        if session is None:
+            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+        current = session_from_cookie(request)
+        end_session(session)
+        security_event("session_revoked", request, user=request.user.pk, reason=session.kind)
+        response = Response(status=status.HTTP_204_NO_CONTENT)
+        if current is not None and current.pk == session.pk:
+            response.delete_cookie(settings.JWT_REFRESH_COOKIE_NAME, path="/api/auth/")
         return response
 
 

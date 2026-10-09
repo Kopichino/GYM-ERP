@@ -4,6 +4,25 @@ import type { CurrentUser } from "../store/authStore";
 export interface LoginPayload {
   username: string;
   password: string;
+  /** "Remember me": a longer session. Decided by the server, which keeps the
+      cookie httpOnly -- nothing about it is stored in the browser. */
+  remember_me?: boolean;
+  /** "Trust this device": the longest session, recorded as a device the person
+      can later sign out. Never a way past the password or the two-step code. */
+  trust_device?: boolean;
+}
+
+/**
+ * How long a sign-in should last, as chosen on the login form. At most one:
+ * trusting a device is the stronger of the two, so the form never lets both be
+ * ticked, and the server gives it precedence if both ever arrive anyway.
+ */
+export type Persistence = "none" | "remember" | "trust";
+
+/** The request fields for a choice. Sent only on the password step -- the server
+    carries the choice through the two-step code inside its signed token. */
+export function persistenceFields(choice: Persistence): Pick<LoginPayload, "remember_me" | "trust_device"> {
+  return { remember_me: choice === "remember", trust_device: choice === "trust" };
 }
 
 export interface SignupPayload {

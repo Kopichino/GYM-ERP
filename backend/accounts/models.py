@@ -1,6 +1,9 @@
 from django.contrib.auth.models import AbstractUser
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
+from django.utils import timezone
+
+from .session_policy import KINDS, NORMAL, REMEMBER, TRUSTED
 
 
 class Role(models.TextChoices):
@@ -143,3 +146,60 @@ class MfaRecoveryCode(models.Model):
                 fields=["user", "code_hash"], name="recovery_code_unique_per_user"
             ),
         ]
+
+
+class AuthSession(models.Model):
+    """One signed-in browser or device: the thing a refresh token belongs to.
+
+    A refresh token is replaced every time it is used, and SimpleJWT's own tables
+    keep each one as an unrelated row -- so on their own they cannot say "this
+    laptop", cannot be listed, and cannot be revoked one device at a time. This is
+    the row that stays put while the tokens come and go.
+
+    It carries the three things a long-lived sign-in needs:
+
+    * a **ceiling** (`expires_at`), fixed at login from the kind of session and
+      never moved by use -- the server enforces it as well as the token's own
+      expiry, so neither alone is the only thing standing in the way;
+    * a way to **end it** (`revoked_at`) that does not depend on the cache, so
+      revoking survives a Redis outage exactly as blacklisting a token does;
+    * enough to **recognise** it without keeping a secret: only a SHA-256 of the
+      random session secret is stored. The secret itself lives in the signed
+      refresh token in the httpOnly cookie and nowhere else.
+
+    About the person, not a gym -- like the password and two-step sign-in, a
+    session covers every gym the account belongs to, so nothing is tenant-scoped.
+    No address is kept, and the label is a browser-and-system name, not the raw
+    user agent.
+    """
+
+    KIND_CHOICES = [
+        (NORMAL, "Normal"),
+        (REMEMBER, "Remember me"),
+        (TRUSTED, "Trusted device"),
+    ]
+    assert {key for key, _ in KIND_CHOICES} == set(KINDS)
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="auth_sessions")
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES, default=NORMAL)
+    secret_hash = models.CharField(max_length=64, unique=True)
+    label = models.CharField(max_length=120, blank=True)
+    #: The refresh token currently good for this session, so a rotation can be
+    #: traced and the row and the token table cannot drift apart unnoticed.
+    current_jti = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-last_seen_at"]
+        indexes = [models.Index(fields=["user", "revoked_at"])]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} session for {self.user} ({self.label or 'unknown device'})"
+
+    @property
+    def is_live(self):
+        """Neither revoked nor past its ceiling, right now."""
+        return self.revoked_at is None and self.expires_at > timezone.now()

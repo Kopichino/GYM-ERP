@@ -20,6 +20,8 @@ from urllib.parse import quote, urlencode
 from django.conf import settings
 from django.core import signing
 
+from .session_policy import KINDS, NORMAL
+
 DIGITS = 6
 PERIOD = 30
 
@@ -147,16 +149,33 @@ def _password_fingerprint(user):
     return hashlib.sha256(user.password.encode()).hexdigest()[:20]
 
 
-def pending_token(user):
+def pending_token(user, kind=NORMAL):
     """Proof that this person got the password right -- and nothing more.
 
     It is not a session: it opens no part of the API, only the two-step
     endpoints. It is tied to the current password hash, so changing or
     resetting the password voids any half-finished sign-in along with it.
+
+    It also carries what the person asked for at the password step -- "remember
+    me", "trust this device" -- so the second step opens the session they chose.
+    Signed with the rest, so it cannot be changed between the two steps; and it
+    only ever sets how long the session lasts, never whether the code is needed.
     """
     return signing.dumps(
-        {"uid": user.pk, "pw": _password_fingerprint(user)}, salt=PENDING_SALT, compress=True
+        {"uid": user.pk, "pw": _password_fingerprint(user), "kd": kind},
+        salt=PENDING_SALT,
+        compress=True,
     )
+
+
+def pending_kind(token):
+    """The kind of session a pending token asked for. Anything unrecognised is normal."""
+    try:
+        data = signing.loads(str(token or ""), salt=PENDING_SALT, max_age=PENDING_MAX_AGE)
+    except signing.BadSignature:
+        return NORMAL
+    kind = data.get("kd")
+    return kind if kind in KINDS else NORMAL
 
 
 def user_from_pending(token):

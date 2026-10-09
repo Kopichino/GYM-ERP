@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { fetchMe, login } from "../api/auth";
+import { fetchMe, login, persistenceFields, type Persistence } from "../api/auth";
 import AuthLayout from "../components/layout/AuthLayout";
 import MfaSignIn, { type PendingSignIn } from "../components/mfa/MfaSignIn";
 import { Button, ErrorText, Input } from "../components/ui";
@@ -10,9 +10,42 @@ import { homePathFor, useAuthStore } from "../store/authStore";
 const LABEL_CLS =
   "mb-1 block text-xs uppercase tracking-wide text-[var(--color-text-muted)]";
 
+/** One of the two sign-in length options: a checkbox with a small line under it. */
+function PersistOption(props: {
+  id: string;
+  label: string;
+  hint: string;
+  checked: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  return (
+    <label
+      htmlFor={props.id}
+      className="flex cursor-pointer items-start gap-2 text-sm text-[var(--color-text)]"
+    >
+      <input
+        id={props.id}
+        type="checkbox"
+        checked={props.checked}
+        onChange={(e) => props.onChange(e.target.checked)}
+        className="mt-0.5 accent-[var(--color-accent)]"
+      />
+      <span>
+        {props.label}
+        <span className="block text-[11px] leading-tight text-[var(--color-text-muted)]">
+          {props.hint}
+        </span>
+      </span>
+    </label>
+  );
+}
+
 export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  // Off unless ticked, and never both. It only says how long the server keeps
+  // this sign-in; the credential itself stays in its httpOnly cookie.
+  const [persist, setPersist] = useState<Persistence>("none");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   // Set once the password is right and a second step is due.
@@ -37,7 +70,7 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const result = await login({ username, password });
+      const result = await login({ username, password, ...persistenceFields(persist) });
       if (result.kind === "session") {
         await finish(result.access);
       } else {
@@ -121,6 +154,20 @@ export default function LoginPage() {
             required
           />
         </div>
+        <PersistOption
+          id="login-remember"
+          label="Remember me"
+          hint="Stay signed in, even after you close the browser."
+          checked={persist === "remember"}
+          onChange={(on) => setPersist(on ? "remember" : "none")}
+        />
+        <PersistOption
+          id="login-trust"
+          label="Trust this device"
+          hint="Stay signed in longest on this device. Your password and two-step code are still required."
+          checked={persist === "trust"}
+          onChange={(on) => setPersist(on ? "trust" : "none")}
+        />
         <ErrorText>{error}</ErrorText>
         <Button type="submit" disabled={loading} className="mt-2 py-2.5">
           {loading ? "Logging in..." : "Sign in"}

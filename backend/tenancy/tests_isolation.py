@@ -318,6 +318,10 @@ class ModelRegistryTests(APITestCase):
         # How that person signs in, which covers every gym they belong to.
         "accounts.MfaDevice",
         "accounts.MfaRecoveryCode",
+        # A signed-in browser or device. Like the password it belongs to the
+        # person, so one session covers every gym the account is at; the list and
+        # revoke endpoints start from request.user and cannot reach anyone else's.
+        "accounts.AuthSession",
         "tenancy.Organisation",
         "tenancy.Tenant",
         "tenancy.Membership",

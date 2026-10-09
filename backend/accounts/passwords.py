@@ -24,14 +24,14 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework_simplejwt.tokens import RefreshToken
 
 from tenancy.email_identity import platform_sender
 
 from .models import User
 from core.security_log import security_event
 from .tokens import revoke_refresh_tokens
-from .views import _set_refresh_cookie
+from .auth_sessions import kind_from_request
+from .views import session_response
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +180,10 @@ class PasswordChangeView(APIView):
         if errors:
             return Response({"new_password": errors}, status=status.HTTP_400_BAD_REQUEST)
 
+        # Read before the revoke below ends it: the page keeps the kind of
+        # sign-in it had, so changing a password does not quietly turn a trusted
+        # device into a normal session.
+        kind = kind_from_request(request)
         user.set_password(new_password)
         user.save(update_fields=["password"])
         revoke_refresh_tokens(user)
@@ -188,7 +192,4 @@ class PasswordChangeView(APIView):
         # Revoking ended this session's refresh token along with every other.
         # Issue a fresh one, so changing a password does not also log you out of
         # the page you changed it on.
-        refresh = RefreshToken.for_user(user)
-        response = Response({"access": str(refresh.access_token)})
-        _set_refresh_cookie(response, str(refresh))
-        return response
+        return session_response(user, kind=kind, request=request)
